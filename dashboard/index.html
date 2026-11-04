@@ -1,0 +1,895 @@
+<title>Backside Scalping Edge Finder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a research memo on top (answers, then the eight headline numbers),
+   an evidence locker below (tabs), a drawer that lists the sessions behind any
+   number, and a chart sheet for each session. */
+:root {
+  --paper: #F3F5F7; --panel: #FFFFFF; --panel-2: #EBEEF2; --ink: #131820; --ink-2: #4D5866;
+  --ink-3: #7A8594; --line: #D8DDE4; --accent: #2C53C9; --accent-soft: #E4EAFB;
+  --good: #23784D; --good-soft: #DDF1E6; --bad: #B83A32; --bad-soft: #F8E1DE; --warn: #9A6412; --warn-soft: #F7ECD8;
+  --up: #2E8B57; --down: #C6443B; --e9: #C98512; --e20: #4F55D8; --vwap: #9B3FB0;
+  --st1: #8FD1A8; --st2: #2E8B57; --st3: #A8C66C; --st4: #E3B341; --st5: #D9673E; --st6: #B83A32; --st7: #8C6BB1; --st8: #3B82C4; --st0: #CBD2DA;
+  --shadow: 0 1px 2px rgb(19 24 32 / 6%), 0 8px 24px rgb(19 24 32 / 8%);
+  --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #0D1015; --panel: #151A21; --panel-2: #1C222B; --ink: #E7EBF0; --ink-2: #A3AEBC; --ink-3: #74808F;
+  --line: #2A323D; --accent: #86A2FF; --accent-soft: #1E2A4D; --good: #5CC48C; --good-soft: #15301F;
+  --bad: #F07A70; --bad-soft: #3A1B19; --warn: #E2B05A; --warn-soft: #3A2C12;
+  --up: #4CB97C; --down: #E9675C; --e9: #E8A93A; --e20: #8C91FF; --vwap: #D27BE6;
+  --st0: #3A434F; --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 35%); color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --paper: #0D1015; --panel: #151A21; --panel-2: #1C222B; --ink: #E7EBF0; --ink-2: #A3AEBC; --ink-3: #74808F;
+  --line: #2A323D; --accent: #86A2FF; --accent-soft: #1E2A4D; --good: #5CC48C; --good-soft: #15301F;
+  --bad: #F07A70; --bad-soft: #3A1B19; --warn: #E2B05A; --warn-soft: #3A2C12;
+  --up: #4CB97C; --down: #E9675C; --e9: #E8A93A; --e20: #8C91FF; --vwap: #D27BE6;
+  --st0: #3A434F; --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 35%); color-scheme: dark; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--paper); color: var(--ink); font: 15px/1.5 var(--f-body); margin: 0; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px));
+        padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 64px; }
+h1, h2, h3 { font-family: var(--f-display); font-stretch: 82%; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(30px, 5vw, 46px); font-weight: 800; line-height: 1.02; }
+h2 { font-size: 22px; font-weight: 700; }
+h3 { font-size: 16px; font-weight: 650; }
+.mono, .num, td.n, th.n { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.eyebrow { font: 600 11px/1.2 var(--f-body); letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-3); }
+.muted { color: var(--ink-2); }
+a { color: var(--accent); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* masthead */
+.mast { display: grid; gap: 14px; padding-block: 8px 18px; border-bottom: 2px solid var(--ink); }
+.mast-top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+.mast p { max-width: 70ch; margin: 6px 0 0; color: var(--ink-2); }
+.tape { display: flex; flex-wrap: wrap; gap: 6px 22px; font: 500 12.5px/1.4 var(--f-mono); color: var(--ink-2); }
+.tape b { color: var(--ink); font-weight: 500; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px;
+        font: 600 11.5px/1.4 var(--f-body); letter-spacing: 0.02em; border: 1px solid var(--line); background: var(--panel); white-space: nowrap; }
+.chip.good { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.chip.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.chip.info { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.banner { margin-top: 14px; padding: 12px 14px; border: 2px dashed var(--bad); color: var(--bad); background: var(--bad-soft);
+          font-weight: 600; border-radius: 6px; }
+
+/* answers */
+.answers { display: grid; gap: 0; margin-top: 22px; }
+.answer { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 4px 18px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+.answer .qn { font: 800 34px/1 var(--f-display); font-stretch: 75%; color: var(--ink-3); }
+.answer h2 { font-size: 19px; font-stretch: 88%; }
+.answer .text { margin: 8px 0 0; max-width: 78ch; }
+.answer .nums { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.stat { display: inline-flex; flex-direction: column; gap: 1px; padding: 7px 11px; border-radius: 6px; border: 1px solid var(--line);
+        background: var(--panel); cursor: pointer; text-align: left; min-width: 0; }
+.stat:hover { border-color: var(--accent); }
+.stat .v { font: 500 16px/1.2 var(--f-mono); font-variant-numeric: tabular-nums; }
+.stat .l { font-size: 12px; color: var(--ink-2); }
+@media (max-width: 560px) { .answer { grid-template-columns: minmax(0, 1fr); } .answer .qn { font-size: 22px; } }
+
+/* KPI tiles */
+section { margin-top: 34px; }
+.sec-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 12px; }
+.sec-head p { margin: 0; color: var(--ink-2); max-width: 70ch; font-size: 14px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 6px;
+        cursor: pointer; text-align: left; align-content: start; }
+.tile:hover { border-color: var(--accent); box-shadow: var(--shadow); }
+.tile .big { font: 500 28px/1.1 var(--f-mono); font-variant-numeric: tabular-nums; }
+.tile .what { font-weight: 600; font-size: 14px; line-height: 1.35; }
+.tile .sub { font-size: 12.5px; color: var(--ink-2); }
+
+/* tabs */
+.tabs-wrap { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--paper); margin-top: 40px; border-bottom: 1px solid var(--line); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--paper); }
+.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.tab { border: 0; background: none; padding: 12px 14px 11px; font: 600 14px/1 var(--f-body); color: var(--ink-2); cursor: pointer;
+       border-bottom: 3px solid transparent; white-space: nowrap; }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.pane { padding-top: 22px; display: grid; gap: 30px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.card > h3 { margin-bottom: 4px; }
+.card > .note { margin: 0 0 12px; color: var(--ink-2); font-size: 13.5px; max-width: 80ch; }
+.row2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+select, input[type="search"] { font: 14px var(--f-body); padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); max-width: 100%; }
+
+/* tables */
+.tbl { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; }
+th { font: 600 11.5px/1.3 var(--f-body); color: var(--ink-2); letter-spacing: 0.02em; position: sticky; top: 0; background: var(--panel); cursor: pointer; }
+th.n, td.n { text-align: right; }
+td.tw { white-space: normal; min-width: 240px; }
+td.tw.wide { min-width: 460px; max-width: 640px; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--panel-2); }
+td.cell { cursor: pointer; }
+td.cell:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+.tag { font: 600 10.5px/1 var(--f-body); padding: 3px 6px; border-radius: 4px; background: var(--panel-2); color: var(--ink-2); }
+.heat td.hc { text-align: center; font: 11.5px var(--f-mono); padding: 5px 4px; min-width: 44px; cursor: pointer; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); margin-top: 8px; }
+.legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+
+/* svg charts */
+.svgc { width: 100%; height: auto; display: block; }
+.svgc text { fill: var(--ink-2); font: 11px var(--f-mono); }
+.tip { position: fixed; pointer-events: none; z-index: 40; background: var(--ink); color: var(--paper); padding: 7px 9px; border-radius: 6px;
+       font: 12px/1.45 var(--f-mono); box-shadow: var(--shadow); max-width: min(320px, 90vw); }
+
+/* drawer + sheet */
+.scrim { position: fixed; inset: 0; background: rgb(10 14 20 / 45%); z-index: 20; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(760px, 100vw); background: var(--panel); z-index: 21; display: flex; flex-direction: column;
+          box-shadow: var(--shadow); padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-right: env(safe-area-inset-right, 0px); }
+.d-head { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.d-head .x { position: absolute; right: calc(12px + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); }
+.d-body { overflow: auto; padding: 0 18px 18px; flex: 1; }
+.d-sum { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 13px var(--f-mono); color: var(--ink-2); }
+.d-sum b { color: var(--ink); font-weight: 500; }
+.btn { border: 1px solid var(--line); background: var(--panel); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13.5px; }
+.btn:hover { border-color: var(--accent); }
+.sheet { position: fixed; inset: 0; z-index: 30; background: var(--panel); display: flex; flex-direction: column;
+         padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+         padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+.s-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.s-head h3 { font-size: 20px; }
+.s-chart { flex: 1; min-height: 300px; position: relative; }
+.s-foot { padding: 10px 16px; border-top: 1px solid var(--line); display: grid; gap: 6px; max-height: 32vh; overflow: auto; font-size: 13px; }
+.stg { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); }
+.stg i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.empty { padding: 28px; text-align: center; color: var(--ink-2); border: 1px dashed var(--line); border-radius: 8px; }
+.prose { max-width: 78ch; }
+.prose p, .prose li { color: var(--ink-2); }
+.prose dt { font-weight: 600; margin-top: 10px; }
+.prose dd { margin: 2px 0 0; color: var(--ink-2); }
+@media (prefers-reduced-motion: no-preference) { .tile, .stat, .btn { transition: border-color .15s, box-shadow .15s; } }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="mast-top">
+      <div>
+        <div class="eyebrow">Sub-$1 &middot; 5M+ shares &middot; 1-minute bars &middot; short side</div>
+        <h1>Backside Scalping Edge Finder</h1>
+        <p>When does a high-volume sub-$1 runner stop being a long and start being a short, and does shorting it pay after costs? Every number below links to the sessions that produced it.</p>
+      </div>
+      <div id="source-chip"></div>
+    </div>
+    <div class="tape" id="tape"><span>Loading the database&hellip;</span></div>
+  </header>
+  <div class="banner" id="synthetic" hidden>Synthetic test data. These numbers come from a random generator used to test the software. They are not market results.</div>
+
+  <div class="answers" id="answers"></div>
+
+  <section aria-labelledby="kpi-h">
+    <div class="sec-head"><h2 id="kpi-h">Best backside entry signals</h2>
+      <p>Signal figures compare each signal with shorting at random moments at the same times of day. Strategy figures are after estimated costs.</p></div>
+    <div class="tiles" id="kpis"></div>
+  </section>
+
+  <div class="tabs-wrap"><div class="tabs" role="tablist" id="tabs">
+    <button class="tab" role="tab" data-tab="signals" aria-selected="true">Signals</button>
+    <button class="tab" role="tab" data-tab="time">Time of day</button>
+    <button class="tab" role="tab" data-tab="strategies">Strategies</button>
+    <button class="tab" role="tab" data-tab="stages">Stages</button>
+    <button class="tab" role="tab" data-tab="questions">Detailed questions</button>
+    <button class="tab" role="tab" data-tab="sessions">Sessions</button>
+    <button class="tab" role="tab" data-tab="method">Method</button>
+  </div></div>
+
+  <div class="pane" id="pane-signals" role="tabpanel"></div>
+  <div class="pane" id="pane-time" role="tabpanel" hidden></div>
+  <div class="pane" id="pane-strategies" role="tabpanel" hidden></div>
+  <div class="pane" id="pane-stages" role="tabpanel" hidden></div>
+  <div class="pane" id="pane-questions" role="tabpanel" hidden></div>
+  <div class="pane" id="pane-sessions" role="tabpanel" hidden></div>
+  <div class="pane" id="pane-method" role="tabpanel" hidden></div>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Sessions behind a statistic">
+  <div class="d-head"><div class="eyebrow">Behind this number</div><h3 id="d-title"></h3><div class="d-sum" id="d-sum"></div>
+    <button class="btn x" id="d-close" aria-label="Close">Close</button></div>
+  <div class="d-body" id="d-body"></div>
+</aside>
+<div class="sheet" id="sheet" hidden role="dialog" aria-label="Session chart">
+  <div class="s-head"><h3 id="s-title"></h3><span class="muted mono" id="s-meta"></span><span style="flex:1"></span>
+    <div class="legend" style="margin:0"><span><i style="background:var(--e9)"></i>9 EMA</span><span><i style="background:var(--e20)"></i>20 EMA</span><span><i style="background:var(--vwap)"></i>VWAP</span></div>
+    <button class="btn" id="s-close">Close</button></div>
+  <div class="s-chart" id="s-chart"></div>
+  <div class="s-foot" id="s-foot"></div>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v; else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null) e.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return e;
+};
+const MINUS = "−";
+const isNum = v => typeof v === "number" && isFinite(v);
+const F = {
+  pct: (v, d = 1) => isNum(v) ? (v * 100).toFixed(d).replace("-", MINUS) + "%" : "—",
+  pct2: v => isNum(v) ? ((v >= 0 ? "+" : "") + (v * 100).toFixed(2)).replace("-", MINUS) + "%" : "—",
+  pts: v => isNum(v) ? ((v >= 0 ? "+" : "") + (v * 100).toFixed(1)).replace("-", MINUS) + " pts" : "—",
+  int: v => isNum(v) ? Math.round(v).toLocaleString("en-US") : "—",
+  min: v => isNum(v) ? Math.round(v) + " min" : "—",
+  x: v => isNum(v) ? v.toFixed(2) + "×" : "—",
+  num: (v, d = 2) => isNum(v) ? v.toFixed(d).replace("-", MINUS) : "—",
+  px: v => isNum(v) ? (v < 1 ? v.toFixed(4) : v.toFixed(2)) : "—",
+  hm: m => isNum(m) ? String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(Math.round(m % 60)).padStart(2, "0") : "—",
+  text: v => v == null ? "—" : String(v),
+};
+const signCls = v => isNum(v) ? (v > 0 ? "pos" : v < 0 ? "neg" : "") : "";
+const cache = new Map();
+async function load(path) {
+  if (!cache.has(path)) cache.set(path, fetch("data/" + path).then(r => { if (!r.ok) throw new Error(path + " " + r.status); return r.json(); }));
+  return cache.get(path);
+}
+const objs = t => t.rows.map(r => Object.fromEntries(t.cols.map((c, i) => [c, r[i]])));
+let META = null;
+const sigName = c => (META.signals[c] || {}).name || c;
+const tod15Label = i => i < 0 ? "Pre-mkt" : F.hm(570 + 15 * i);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+/* ---------------------------------------------------------------- tooltip */
+const tip = $("#tip");
+function showTip(ev, html) { tip.innerHTML = ""; tip.append(...html); tip.hidden = false; moveTip(ev); }
+function moveTip(ev) { const w = tip.offsetWidth, h = tip.offsetHeight; let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14; if (y + h > innerHeight - 8) y = ev.clientY - h - 14; tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px"; }
+function hideTip() { tip.hidden = true; }
+
+/* --------------------------------------------------------------- header */
+function renderHeader(m) {
+  const c = m.coverage, w = m.window;
+  $("#tape").replaceChildren(
+    el("span", {}, "Window ", el("b", { text: `${w.start} → ${w.end}` })),
+    el("span", {}, el("b", { text: F.int(w.trading_days) }), " trading days"),
+    el("span", {}, el("b", { text: F.int(c.sessions) }), " qualifying sessions"),
+    el("span", {}, el("b", { text: F.int(c.tickers) }), " tickers"),
+    el("span", {}, el("b", { text: F.int(c.signals) }), " signals"),
+    el("span", {}, el("b", { text: F.int(c.configs_tested) }), " strategy variants tested"),
+    el("span", {}, "updated ", el("b", { text: m.generated_at.replace("T", " ") })));
+  $("#source-chip").replaceChildren(el("span", { class: "chip " + (m.synthetic ? "bad" : "info"), text: "Data: " + m.data_source }));
+  $("#synthetic").hidden = !m.synthetic;
+}
+
+const STATUS = { "supported": ["good", "Supported by the data"], "not supported": ["bad", "Not supported"], "weak": ["warn", "Weak evidence"],
+                 "insufficient": ["warn", "Not enough data"], "descriptive": ["info", "Descriptive"] };
+function statButton(n) {
+  const f = F[n.fmt] || F.num;
+  return el("button", { class: "stat", onclick: () => openCohort(n.cohort, n.label) },
+    el("span", { class: "v " + (n.fmt === "pts" || n.fmt === "pct2" ? signCls(n.value) : ""), text: n.value == null ? "—" : f(n.value) }),
+    el("span", { class: "l", text: n.label }));
+}
+function renderAnswers(fs) {
+  const box = $("#answers"); box.replaceChildren();
+  fs.slice(0, 3).forEach((f, i) => {
+    const [cls, txt] = STATUS[f.status] || ["", f.status];
+    box.append(el("article", { class: "answer" },
+      el("div", { class: "qn", text: String(i + 1) }),
+      el("div", {}, el("div", { style: "display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center" },
+          el("h2", { text: f.question }), el("span", { class: "chip " + cls, text: txt })),
+        el("p", { class: "text", text: f.answer }),
+        el("div", { class: "nums" }, (f.numbers || []).map(statButton)))));
+  });
+}
+function renderKpis(ks) {
+  const box = $("#kpis"); box.replaceChildren();
+  if (!ks.length) { box.append(el("div", { class: "empty", text: "No signal has enough occurrences yet." })); return; }
+  for (const k of ks) {
+    const f = F[k.fmt] || F.text;
+    const big = k.fmt === "text" ? k.text : f(k.value);
+    box.append(el("button", { class: "tile", onclick: () => openCohort(k.cohort, k.title) },
+      el("div", { class: "eyebrow", text: k.title }),
+      el("div", { class: "big " + (k.fmt === "pct2" || k.fmt === "pts" ? signCls(k.value) : ""), text: big }),
+      k.fmt === "text" ? null : el("div", { class: "what", text: k.text }),
+      el("div", { class: "sub", text: k.sub })));
+  }
+}
+
+/* --------------------------------------------------------------- tables */
+function sortable(table) {
+  table.querySelectorAll("th").forEach((th, i) => th.addEventListener("click", () => {
+    const tb = table.tBodies[0], rows = [...tb.rows], dir = th.dataset.dir === "asc" ? -1 : 1;
+    table.querySelectorAll("th").forEach(t => delete t.dataset.dir); th.dataset.dir = dir === 1 ? "asc" : "desc";
+    rows.sort((a, b) => { const x = a.cells[i].dataset.v ?? a.cells[i].textContent, y = b.cells[i].dataset.v ?? b.cells[i].textContent;
+      const nx = parseFloat(x), ny = parseFloat(y); if (isFinite(nx) && isFinite(ny)) return (nx - ny) * dir; return String(x).localeCompare(String(y)) * dir; });
+    tb.append(...rows);
+  }));
+  return table;
+}
+function td(v, fmt, opts = {}) {
+  const f = F[fmt] || F.text, t = el("td", { class: (fmt && fmt !== "text" ? "n " : "") + (opts.cls || "") + (opts.color ? " " + signCls(v) : "") + (opts.onclick ? " cell" : ""), text: f(v), title: opts.title });
+  if (isNum(v)) t.dataset.v = v; if (opts.onclick) t.addEventListener("click", opts.onclick); return t;
+}
+
+/* ------------------------------------------------------------ signals tab */
+async function renderSignals() {
+  const pane = $("#pane-signals"); pane.replaceChildren();
+  const T = objs(await load("signals.json"));
+  const ctl = T.find(r => r.sig === "B00");
+  const rows = T.filter(r => r.sig !== "B00").sort((a, b) => (b.edge_lift ?? -9) - (a.edge_lift ?? -9));
+  const card = el("div", { class: "card" }, el("h3", { text: "Every signal, side by side" }),
+    el("p", { class: "note", text: "Worked = fell 1 ATR before rising 1 ATR within 30 minutes; failed = the reverse. Edge = worked minus failed. Lift = edge minus the edge of random moments at the same times of day, with a 95% interval from resampling whole sessions. New low = price broke the low of the move. Click any number to see the sessions behind it." }));
+  const cols = [["Signal", "text"], ["Type", "text"], ["n", "int"], ["Sessions", "int"], ["Worked", "pct"], ["Failed", "pct"], ["Edge", "pts"], ["Lift vs random", "pts"], ["95% interval", "text"],
+    ["New low ≤15m", "pct"], ["New low ≤60m", "pct"], ["New LOD by close", "pct"], ["−5% by close", "pct"], ["−10% by close", "pct"], ["−20% by close", "pct"],
+    ["Avg drop 30m", "pct"], ["Median drop 30m", "pct"], ["Avg rise 30m", "pct"], ["Median rise 30m", "pct"], ["Min to new low", "min"],
+    ["Reclaim 9 EMA 30m", "pct"], ["Reclaim 20 EMA 30m", "pct"], ["Reclaim VWAP 30m", "pct"], ["New high 30m", "pct"], ["New high by close", "pct"],
+    ["Min after high", "min"], ["Below high", "pct"], ["Median time", "hm"]];
+  const tbl = el("table", {}, el("thead", {}, el("tr", {}, cols.map(([c, f]) => el("th", { class: f !== "text" ? "n" : "", text: c })))));
+  const tb = el("tbody");
+  const add = (r, isCtl) => {
+    const q = (where) => () => openCohort(isCtl ? { kind: "events", sig: "B00", where } : { kind: "events", sig: r.sig, where }, `${sigName(r.sig)}`);
+    tb.append(el("tr", {},
+      el("td", { class: "tw", text: (isCtl ? "Control: " : "") + sigName(r.sig) }), el("td", {}, el("span", { class: "tag", text: isCtl ? "control" : r.group })),
+      td(r.n, "int", { onclick: q() }), td(r.sessions, "int"), td(r.p_worked, "pct", { onclick: q({ fp_atr: 0 }) }), td(r.p_failed, "pct", { onclick: q({ fp_atr: 1 }) }),
+      td(r.edge, "pts", { color: true }), td(isCtl ? null : r.edge_lift, "pts", { color: true, onclick: isCtl ? null : q() }),
+      el("td", { class: "n mono", text: isCtl ? "—" : `${F.pts(r.edge_lift_lo)} to ${F.pts(r.edge_lift_hi)}` }),
+      td(r.p_nml_15, "pct", { onclick: q({ nml_15: 1 }) }), td(r.p_nml_60, "pct"), td(r.p_nlod_eod, "pct"),
+      td(r.p_dn5_eod, "pct"), td(r.p_dn10_eod, "pct"), td(r.p_dn20_eod, "pct"),
+      td(r.mfe_30_mean, "pct"), td(r.mfe_30_med, "pct"), td(r.mae_30_mean, "pct"), td(r.mae_30_med, "pct"), td(r.t_nml_med, "min"),
+      td(r.rec_ema9_30, "pct"), td(r.rec_ema20_30, "pct"), td(r.rec_vwap_30, "pct", { onclick: q({ rec_vwap_30: 1 }) }),
+      td(r.p_nhod_30, "pct", { onclick: q({ nhod_30: 1 }) }), td(r.p_nhod_eod, "pct", { onclick: q({ nhod_eod: 1 }) }),
+      td(r.hod_age_med, "min"), td(r.pullback_med, "pct"), td(r.time_med, "hm")));
+  };
+  rows.forEach(r => add(r, false)); if (ctl) add(ctl, true);
+  tbl.append(tb); card.append(el("div", { class: "tbl" }, sortable(tbl)));
+  pane.append(card);
+
+  // forest plot of lifts
+  const fp = el("div", { class: "card" }, el("h3", { text: "Which signals beat random timing?" }),
+    el("p", { class: "note", text: "Each bar is a signal's lift over random moments with its 95% interval. Intervals that cross zero are not distinguishable from chance." }));
+  fp.append(forest(rows.filter(r => isNum(r.edge_lift)), r => sigName(r.sig), r => r.edge_lift, r => r.edge_lift_lo, r => r.edge_lift_hi,
+    r => openCohort({ kind: "events", sig: r.sig }, sigName(r.sig))));
+  pane.append(fp);
+}
+
+function forest(rows, label, val, lo, hi, onclick) {
+  const W = 760, rowH = 24, padL = 330, padR = 30, H = rows.length * rowH + 40;
+  const all = rows.flatMap(r => [lo(r), hi(r), val(r)]).filter(isNum);
+  let mn = Math.min(0, ...all), mx = Math.max(0, ...all); if (mn === mx) { mn -= 0.05; mx += 0.05; }
+  const pad = (mx - mn) * 0.08; mn -= pad; mx += pad;
+  const X = v => padL + (v - mn) / (mx - mn) * (W - padL - padR);
+  const NS = "http://www.w3.org/2000/svg", s = document.createElementNS(NS, "svg");
+  s.setAttribute("viewBox", `0 0 ${W} ${H}`); s.setAttribute("class", "svgc"); s.setAttribute("role", "img");
+  const mk = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  for (const t of ticks(mn, mx, 5)) { s.append(mk("line", { x1: X(t), x2: X(t), y1: 10, y2: H - 24, stroke: css("--line"), "stroke-width": 1 }));
+    const tx = mk("text", { x: X(t), y: H - 8, "text-anchor": "middle" }); tx.textContent = F.pts(t).replace(" pts", ""); s.append(tx); }
+  s.append(mk("line", { x1: X(0), x2: X(0), y1: 6, y2: H - 24, stroke: css("--ink-3"), "stroke-width": 1.5 }));
+  rows.forEach((r, i) => {
+    const y = 20 + i * rowH, v = val(r), good = lo(r) > 0, bad = hi(r) < 0;
+    const col = good ? css("--good") : bad ? css("--bad") : css("--ink-3");
+    const g = mk("g", { style: "cursor:pointer" });
+    const lab = mk("text", { x: padL - 10, y: y + 4, "text-anchor": "end", style: "font-family:var(--f-body);font-size:12px" }); lab.textContent = label(r).length > 54 ? label(r).slice(0, 53) + "…" : label(r);
+    g.append(mk("rect", { x: 0, y: y - 10, width: W, height: rowH, fill: "transparent" }), lab,
+      mk("line", { x1: X(lo(r)), x2: X(hi(r)), y1: y, y2: y, stroke: col, "stroke-width": 2.5, "stroke-linecap": "round" }),
+      mk("circle", { cx: X(v), cy: y, r: 4.5, fill: col }));
+    g.addEventListener("click", () => onclick(r));
+    g.addEventListener("mousemove", e => showTip(e, [el("div", { text: label(r) }), el("div", { text: `lift ${F.pts(v)}  (${F.pts(lo(r))} to ${F.pts(hi(r))})` }), el("div", { text: `n = ${F.int(r.n)}` })]));
+    g.addEventListener("mouseleave", hideTip);
+    s.append(g);
+  });
+  return el("div", { class: "tbl" }, s);
+}
+function ticks(a, b, n) { const step = niceStep((b - a) / n), out = []; for (let v = Math.ceil(a / step) * step; v <= b + 1e-12; v += step) out.push(+v.toFixed(10)); return out; }
+function niceStep(x) { const p = Math.pow(10, Math.floor(Math.log10(x))), f = x / p; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p; }
+
+/* ---------------------------------------------------------- line chart */
+function lineChart(series, xlabels, opts = {}) {
+  const W = opts.w || 760, H = opts.h || 260, pl = 54, pr = 16, pt = 14, pb = 34;
+  const vals = series.flatMap(s => s.y).filter(isNum);
+  let mn = opts.min ?? Math.min(...vals, opts.zero ? 0 : Infinity), mx = opts.max ?? Math.max(...vals, opts.zero ? 0 : -Infinity);
+  if (!isFinite(mn) || !isFinite(mx)) return el("div", { class: "empty", text: "No data in this range yet." });
+  if (mn === mx) { mn -= 0.01; mx += 0.01; } const pad = (mx - mn) * 0.08; mn -= pad; mx += pad;
+  const n = xlabels.length, X = i => pl + (n <= 1 ? 0.5 : i / (n - 1)) * (W - pl - pr), Y = v => pt + (1 - (v - mn) / (mx - mn)) * (H - pt - pb);
+  const NS = "http://www.w3.org/2000/svg", s = document.createElementNS(NS, "svg");
+  const mk = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  s.setAttribute("viewBox", `0 0 ${W} ${H}`); s.setAttribute("class", "svgc");
+  const fmt = opts.fmt || F.pct;
+  const axis = fmt === F.pts ? v => ((v > 0 ? "+" : "") + (v * 100).toFixed(0)).replace("-", MINUS)
+             : fmt === F.pct2 ? v => ((v > 0 ? "+" : "") + (v * 100).toFixed(1)).replace("-", MINUS) + "%"
+             : v => (v * 100).toFixed(0).replace("-", MINUS) + "%";
+  for (const t of ticks(mn, mx, 4)) { s.append(mk("line", { x1: pl, x2: W - pr, y1: Y(t), y2: Y(t), stroke: css("--line") }));
+    const tx = mk("text", { x: pl - 6, y: Y(t) + 4, "text-anchor": "end" }); tx.textContent = axis(t); s.append(tx); }
+  if (fmt === F.pts) { const u = mk("text", { x: 4, y: pt + 2, "text-anchor": "start" }); u.textContent = "pts"; s.append(u); }
+  if (opts.zero && mn < 0 && mx > 0) s.append(mk("line", { x1: pl, x2: W - pr, y1: Y(0), y2: Y(0), stroke: css("--ink-3"), "stroke-width": 1.2 }));
+  const every = Math.ceil(n / 9);
+  xlabels.forEach((l, i) => { if (i % every) return; const tx = mk("text", { x: X(i), y: H - 12, "text-anchor": "middle" }); tx.textContent = l; s.append(tx); });
+  for (const se of series) {
+    let d = ""; se.y.forEach((v, i) => { if (!isNum(v)) return; d += (d && isNum(se.y[i - 1]) ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1); });
+    s.append(mk("path", { d, fill: "none", stroke: se.color, "stroke-width": se.width || 2, "stroke-dasharray": se.dash || "", "stroke-linejoin": "round" }));
+    se.y.forEach((v, i) => { if (isNum(v)) s.append(mk("circle", { cx: X(i), cy: Y(v), r: 2.6, fill: se.color })); });
+  }
+  const rule = mk("line", { y1: pt, y2: H - pb, stroke: css("--ink-3"), "stroke-dasharray": "3 3", visibility: "hidden" }); s.append(rule);
+  const hit = mk("rect", { x: pl, y: pt, width: W - pl - pr, height: H - pt - pb, fill: "transparent", style: "cursor:pointer" }); s.append(hit);
+  const idxAt = e => { const r = s.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width * W; return Math.max(0, Math.min(n - 1, Math.round((x - pl) / (W - pl - pr) * (n - 1)))); };
+  hit.addEventListener("mousemove", e => { const i = idxAt(e); rule.setAttribute("x1", X(i)); rule.setAttribute("x2", X(i)); rule.setAttribute("visibility", "visible");
+    showTip(e, [el("div", { text: xlabels[i] + (opts.nlabel ? `  ·  n ${F.int(opts.nlabel[i])}` : "") }), ...series.map(se => el("div", {}, el("span", { style: `color:${se.color}`, text: "● " }), `${se.name}: ${fmt(se.y[i])}`))]); });
+  hit.addEventListener("mouseleave", () => { rule.setAttribute("visibility", "hidden"); hideTip(); });
+  if (opts.onclick) hit.addEventListener("click", e => opts.onclick(idxAt(e)));
+  const lg = el("div", { class: "legend" }, series.map(se => el("span", {}, el("i", { style: `background:${se.color}` }), se.name)));
+  return el("div", {}, el("div", { class: "tbl" }, s), lg);
+}
+
+/* ------------------------------------------------------------ time tab */
+async function renderTime() {
+  const pane = $("#pane-time"); pane.replaceChildren();
+  const prof = objs(await load("tod_profile.json"));
+  const sig = prof.filter(r => r.sample === "signals").sort((a, b) => a.tod15 - b.tod15);
+  const ctl = new Map(prof.filter(r => r.sample === "control").map(r => [r.tod15, r]));
+  const xl = sig.map(r => tod15Label(r.tod15)), C = k => sig.map(r => r[k]), K = k => sig.map(r => (ctl.get(r.tod15) || {})[k]);
+  const drill = i => openCohort({ kind: "events", pooled: true, where: { tod15: sig[i].tod15 } }, `All signals, ${xl[i]} bucket`);
+  pane.append(el("div", { class: "row2" },
+    el("div", { class: "card" }, el("h3", { text: "Probability the move continues, by time of day" }),
+      el("p", { class: "note", text: "All backside signals pooled (one per signal bar) against random moments. Continue = new low of the move within 15 minutes. Worked = 1 ATR down before 1 ATR up." }),
+      lineChart([{ name: "Continue, signals", y: C("p_continue_15"), color: css("--accent") }, { name: "Continue, random", y: K("p_continue_15"), color: css("--ink-3"), dash: "4 4" },
+                 { name: "Worked, signals", y: C("p_worked"), color: css("--good") }, { name: "Failed, signals", y: C("p_failed"), color: css("--bad") }], xl, { onclick: drill, nlabel: C("n") })),
+    el("div", { class: "card" }, el("h3", { text: "Downside vs upside excursion, by time of day" }),
+      el("p", { class: "note", text: "Average largest drop and largest rise within 30 minutes of a signal. A scalp needs the first to beat the second by more than costs." }),
+      lineChart([{ name: "Avg drop (30m)", y: C("dn_exc_30"), color: css("--good") }, { name: "Avg rise (30m)", y: C("up_exc_30"), color: css("--bad") },
+                 { name: "Avg drop, random", y: K("dn_exc_30"), color: css("--ink-3"), dash: "4 4" }], xl, { onclick: drill, nlabel: C("n") }))));
+  pane.append(el("div", { class: "row2" },
+    el("div", { class: "card" }, el("h3", { text: "Reversal risk, by time of day" }),
+      el("p", { class: "note", text: "Probability of a VWAP reclaim or 20 EMA reclaim within 30 minutes (when the signal was below it), and of a new high of day afterwards." }),
+      lineChart([{ name: "Reclaim VWAP 30m", y: C("p_rec_vwap_30"), color: css("--vwap") }, { name: "Reclaim 20 EMA 30m", y: C("p_rec_ema20_30"), color: css("--e20") },
+                 { name: "New high 30m", y: C("p_new_hod_30"), color: css("--bad") }, { name: "New high by close", y: C("p_new_hod_eod"), color: css("--warn"), dash: "4 4" }], xl, { onclick: drill, nlabel: C("n") })),
+    el("div", { class: "card" }, el("h3", { text: "Edge over random timing, by time of day" }),
+      el("p", { class: "note", text: "Edge (worked minus failed) for pooled signals and for random moments at the same times." }),
+      lineChart([{ name: "Edge, signals", y: C("edge"), color: css("--accent") }, { name: "Edge, random", y: K("edge"), color: css("--ink-3"), dash: "4 4" }], xl,
+        { onclick: drill, zero: true, fmt: F.pts, nlabel: C("n") }))));
+
+  // every section-21 metric by bucket, signals vs random moments
+  const tp = el("div", { class: "card" }, el("h3", { text: "Time-of-day profile" }),
+    el("p", { class: "note", text: "All backside signals pooled, with random moments (control) underneath each bucket. Continue = new low of the move within 15 min. Reclaims count only signals that were below the level. Gap = average minutes between consecutive signals in a session." }));
+  const tpc = ["Bucket", "Sample", "n", "Continue \u226415m", "Worked", "Failed", "Edge", "Avg drop 30m", "Avg rise 30m", "Reclaim VWAP 30m", "Reclaim 20 EMA 30m", "New high 30m", "New high by close", "Gap (min)"];
+  const tt = el("table", {}, el("thead", {}, el("tr", {}, tpc.map((h, i) => el("th", { class: i > 1 ? "n" : "", text: h })))));
+  const ttb = el("tbody");
+  for (const r of sig) for (const x of [r, ctl.get(r.tod15)]) { if (!x) continue; const isC = x.sample === "control";
+    ttb.append(el("tr", { class: "click" + (isC ? " muted" : ""), onclick: () => openCohort(isC ? { kind: "events", sig: "B00", where: { tod15: x.tod15 } } : { kind: "events", pooled: true, where: { tod15: x.tod15 } }, `${isC ? "Random moments" : "All signals"}, ${tod15Label(x.tod15)}`) },
+      el("td", { text: isC ? "" : tod15Label(x.tod15) }), el("td", { text: isC ? "random" : "signals" }), td(x.n, "int"), td(x.p_continue_15, "pct"), td(x.p_worked, "pct"), td(x.p_failed, "pct"),
+      td(x.edge, "pts", { color: true }), td(x.dn_exc_30, "pct"), td(x.up_exc_30, "pct"), td(x.p_rec_vwap_30, "pct"), td(x.p_rec_ema20_30, "pct"), td(x.p_new_hod_30, "pct"), td(x.p_new_hod_eod, "pct"), td(isC ? null : x.gap_min, "num"))); }
+  tt.append(ttb); tp.append(el("div", { class: "tbl", style: "max-height:60vh" }, tt)); pane.append(tp);
+
+  // heatmap signal x bucket
+  const st = objs(await load("signal_tod.json")).filter(r => r.sig !== "B00");
+  const buckets = [...new Set(st.map(r => r.tod15))].sort((a, b) => a - b);
+  const sigs = [...new Set(st.map(r => r.sig))];
+  const hm = el("div", { class: "card" }, el("h3", { text: "Signal × time of day: lift over random timing" }),
+    el("p", { class: "note", text: "Cell = signal edge minus random-moment edge in the same 15-minute bucket. Strong color only when the bucket has 30+ signals. Click a cell for its sessions." }));
+  const by = new Map(st.map(r => [r.sig + "|" + r.tod15, r]));
+  const t = el("table", { class: "heat" }, el("thead", {}, el("tr", {}, el("th", { text: "Signal" }), buckets.map(b => el("th", { class: "n", text: tod15Label(b) })))));
+  const tb = el("tbody");
+  for (const s of sigs) {
+    tb.append(el("tr", {}, el("td", { class: "tw", text: sigName(s) }), buckets.map(b => {
+      const r = by.get(s + "|" + b); if (!r || !r.n) return el("td", { class: "hc muted", text: "" });
+      const v = r.edge_lift, a = Math.min(1, Math.abs(v || 0) / 0.25) * (r.n >= 30 ? 0.85 : 0.25);
+      const bg = !isNum(v) ? "transparent" : `color-mix(in srgb, ${v > 0 ? css("--good") : css("--bad")} ${Math.round(a * 100)}%, transparent)`;
+      const c = el("td", { class: "hc", style: `background:${bg}`, text: isNum(v) ? (v * 100).toFixed(0) : "" });
+      c.addEventListener("click", () => openCohort({ kind: "events", sig: s, where: { tod15: b } }, `${sigName(s)} · ${tod15Label(b)}`));
+      c.addEventListener("mousemove", e => showTip(e, [el("div", { text: `${sigName(s)} · ${tod15Label(b)}` }), el("div", { text: `n ${F.int(r.n)} · edge ${F.pts(r.edge)} · lift ${F.pts(v)}` }),
+        el("div", { text: `interval ${F.pts(r.edge_lift_lo)} to ${F.pts(r.edge_lift_hi)}` })]));
+      c.addEventListener("mouseleave", hideTip); return c; })));
+  }
+  t.append(tb); hm.append(el("div", { class: "tbl" }, t)); pane.append(hm);
+
+  // cutoffs
+  const S = await load("strategies.json");
+  const fin = objs(S.finalists), cuts = objs(S.cutoffs), heat = objs(S.start_heat), marg = objs(S.marginal_tod);
+  const cc = el("div", { class: "card" }, el("h3", { text: "When to stop initiating new scalps" }),
+    el("p", { class: "note", text: "Each row stops new entries at the cutoff. “Stop new entries” manages open trades with their normal exits; “cover at cutoff” also closes everything at the cutoff. Train = first 60% of weeks, test = the rest." }));
+  const pick = el("select", { id: "cut-pick", "aria-label": "Strategy" });
+  for (const cid of S.cut_cids) { const f = fin.find(x => x.cid === cid); if (f) pick.append(el("option", { value: cid, text: f.label })); }
+  cc.append(el("div", { class: "controls" }, el("label", { for: "cut-pick", class: "muted", text: "Strategy" }), pick));
+  const body = el("div"); cc.append(body); pane.append(cc);
+  const draw = () => {
+    const cid = +pick.value; body.replaceChildren();
+    const rows = cuts.filter(r => r.cid === cid);
+    if (!rows.length) { body.append(el("div", { class: "empty", text: "No cutoff results yet." })); return; }
+    const t = el("table", {}, el("thead", {}, el("tr", {}, ["Stop new entries at", "Open trades", "Trades", "EV / trade", "95% interval", "Win rate", "Profit factor", "Sum of trade returns", "Days positive", "Daily mean/sd", "Max drawdown (sum)", "Train EV", "Test EV"].map((h, i) => el("th", { class: i > 1 ? "n" : "", text: h })))));
+    const tb = el("tbody");
+    for (const mode of ["stop new entries", "stop entries + cover at cutoff"]) for (const cut of META.config.strat.cutoffs) {
+      const a = rows.find(r => r.cutoff === cut && r.mode === mode && r.period === "all"); if (!a) continue;
+      const tr_ = rows.find(r => r.cutoff === cut && r.mode === mode && r.period === "train"), te = rows.find(r => r.cutoff === cut && r.mode === mode && r.period === "test");
+      const before = cut === "16:00" ? 9999 : hmToMin(cut);
+      tb.append(el("tr", { class: "click", onclick: () => openCohort({ kind: "trades", cid, before, flat: mode !== "stop new entries" ? cut : null }, `Entries before ${cut}`) },
+        el("td", { text: cut === "16:00" ? "Trade all day" : cut }), el("td", { text: mode === "stop new entries" ? "normal exits" : "cover at cutoff" }),
+        td(a.n, "int"), td(a.ev, "pct2", { color: true }), el("td", { class: "n mono", text: `${F.pct2(a.ev_lo)} to ${F.pct2(a.ev_hi)}` }),
+        td(a.win, "pct"), td(a.pf, "num"), td(a.total, "pct2", { color: true }), td(a.pos_days, "pct"), td(a.day_sharpe, "num"), td(a.max_dd, "pct2"),
+        td(tr_ && tr_.ev, "pct2", { color: true }), td(te && te.ev, "pct2", { color: true })));
+    }
+    t.append(tb); body.append(el("div", { class: "tbl" }, sortable(t)));
+    // marginal EV by bucket
+    const m = marg.filter(r => r.cid === cid).sort((a, b) => a.tod15 - b.tod15);
+    if (m.length) body.append(el("h3", { style: "margin-top:18px", text: "Average trade by entry time (15-minute buckets)" }),
+      lineChart([{ name: "EV per trade", y: m.map(r => r.ev), color: css("--accent") }, { name: "95% low", y: m.map(r => r.ev_lo), color: css("--ink-3"), dash: "3 3", width: 1 },
+                 { name: "95% high", y: m.map(r => r.ev_hi), color: css("--ink-3"), dash: "3 3", width: 1 }], m.map(r => r.bucket),
+        { zero: true, fmt: F.pct2, w: 1180, h: 300, nlabel: m.map(r => r.n), onclick: i => openCohort({ kind: "trades", cid, bucket: m[i].tod15 }, `Entries ${m[i].bucket}`) }));
+    // start x stop
+    const h = heat.filter(r => r.cid === cid);
+    if (h.length) {
+      const starts = [...new Set(h.map(r => r.start))], stops_ = [...new Set(h.map(r => r.cutoff))];
+      const t2 = el("table", { class: "heat" }, el("thead", {}, el("tr", {}, el("th", { text: "Start \\ stop" }), stops_.map(s => el("th", { class: "n", text: s === "16:00" ? "close" : s })))));
+      const tb2 = el("tbody");
+      const mxa = Math.max(...h.map(r => Math.abs(r.ev || 0)), 1e-6);
+      for (const s of starts) tb2.append(el("tr", {}, el("td", { text: s }), stops_.map(c => { const r = h.find(x => x.start === s && x.cutoff === c);
+        if (!r || !r.n) return el("td", { class: "hc" }); const a = Math.min(1, Math.abs(r.ev) / mxa) * (r.n >= 20 ? 0.8 : 0.2);
+        const cell = el("td", { class: "hc", style: `background:color-mix(in srgb, ${r.ev > 0 ? css("--good") : css("--bad")} ${Math.round(a * 100)}%, transparent)`, text: F.pct2(r.ev) });
+        cell.addEventListener("click", () => openCohort({ kind: "trades", cid, after: hmToMin(s), before: c === "16:00" ? 9999 : hmToMin(c) }, `Entries ${s} to ${c}`));
+        cell.addEventListener("mousemove", e => showTip(e, [el("div", { text: `${s} to ${c}` }), el("div", { text: `${F.int(r.n)} trades · EV ${F.pct2(r.ev)} · win ${F.pct(r.win)}` })])); cell.addEventListener("mouseleave", hideTip); return cell; })));
+      t2.append(tb2);
+      body.append(el("h3", { style: "margin-top:18px", text: "Start time × stop time (EV per trade)" }), el("div", { class: "tbl" }, t2));
+    }
+  };
+  pick.addEventListener("change", draw); draw();
+}
+const hmToMin = s => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
+
+/* ------------------------------------------------------ strategies tab */
+async function renderStrategies() {
+  const pane = $("#pane-strategies"); pane.replaceChildren();
+  const S = await load("strategies.json");
+  const wf = S.wf, pb = S.pbo, split = S.split;
+  pane.append(el("div", { class: "tiles" },
+    el("button", { class: "tile", onclick: () => openCohort({ kind: "walkforward" }, "Walk-forward picks") }, el("div", { class: "eyebrow", text: "Walk-forward, out of sample" }),
+      el("div", { class: "big " + signCls(wf.oos_ev), text: F.pct2(wf.oos_ev) }), el("div", { class: "what", text: "Average trade when each week is traded with the setup chosen from earlier weeks only" }),
+      el("div", { class: "sub", text: `${F.int(wf.oos_n)} trades · ${F.pct(wf.weeks_positive, 0)} of weeks positive · ${wf.picks_distinct ?? "—"} distinct picks` })),
+    el("div", { class: "tile", style: "cursor:default" }, el("div", { class: "eyebrow", text: "Probability of backtest overfitting" }),
+      el("div", { class: "big", text: F.pct(pb.pbo, 0) }), el("div", { class: "what", text: "How often the in-sample winner finished below the median out of sample" }),
+      el("div", { class: "sub", text: `${F.int(pb.splits)} combinatorial splits (CSCV). Under 25% is reassuring; near 50% means ranking is noise.` })),
+    el("div", { class: "tile", style: "cursor:default" }, el("div", { class: "eyebrow", text: "Does in-sample rank persist?" }),
+      el("div", { class: "big", text: F.num(split.rank_corr) }), el("div", { class: "what", text: "Rank correlation of EV between the first 60% and last 40% of weeks" }),
+      el("div", { class: "sub", text: `${F.int(split.n_compared)} setups compared · positive in training ${F.pct(split.share_positive_train, 0)}, in test ${F.pct(split.share_positive_test, 0)}` }))));
+
+  const top = objs(S.split_top);
+  const c1 = el("div", { class: "card" }, el("h3", { text: "Ranked on the first 60% of weeks, judged on the rest" }),
+    el("p", { class: "note", text: "The ranking uses only the training weeks (by the lower end of a day-clustered 95% interval). Test columns are weeks the ranking never saw. Click a row for its trades." }));
+  const t1 = el("table", {}, el("thead", {}, el("tr", {}, ["#", "Setup", "Train EV", "Train trades", "Test EV", "Test trades"].map((h, i) => el("th", { class: i > 1 ? "n" : "", text: h })))));
+  const b1 = el("tbody"); top.forEach((r, i) => b1.append(el("tr", { class: "click", onclick: () => openCohort({ kind: "trades", cid: r.cid, window: r.window }, r.label) },
+    el("td", { class: "n", text: String(i + 1) }), el("td", { class: "tw wide", text: r.label }), td(r.train_ev, "pct2", { color: true }), td(r.train_n, "int"), td(r.test_ev, "pct2", { color: true }), td(r.test_n, "int"))));
+  t1.append(b1); c1.append(el("div", { class: "tbl" }, sortable(t1))); pane.append(c1);
+
+  const fin = objs(S.finalists);
+  const c2 = el("div", { class: "card" }, el("h3", { text: "Short-listed setups in detail" }),
+    el("p", { class: "note", text: "Includes walk-forward picks, training leaders, full-sample leaders (in-sample, optimistic), the best setup per signal and a common reference exit per signal (3% stop, 3% target, 30 min). EV is net of spread, slippage, commission and locate. Low/high cost columns rerun every trade under cheaper and costlier assumptions." }));
+  const cols = [["Setup", "text"], ["Why listed", "text"], ["Trades", "int"], ["EV / trade", "pct2"], ["95% interval", "text"], ["Win", "pct"], ["Profit factor", "num"], ["Avg win", "pct2"], ["Avg loss", "pct2"],
+    ["EV in R", "num"], ["Max DD", "pct2"], ["Days +", "pct"], ["Low cost", "pct2"], ["High cost", "pct2"], ["Test EV", "pct2"], ["Under SSR", "pct"], ["Halt in trade", "pct"]];
+  const t2 = el("table", {}, el("thead", {}, el("tr", {}, cols.map(([h, f]) => el("th", { class: f !== "text" ? "n" : "", text: h })))));
+  const b2 = el("tbody");
+  fin.sort((a, b) => (b.test_ev ?? -9) - (a.test_ev ?? -9)).forEach(r => b2.append(el("tr", { class: "click", onclick: () => openCohort({ kind: "trades", cid: r.cid, window: r.window }, r.label) },
+    el("td", { class: "tw wide", text: r.label }), el("td", { class: "tw muted", text: r.why }), td(r.n, "int"), td(r.ev, "pct2", { color: true }),
+    el("td", { class: "n mono", text: `${F.pct2(r.ev_lo)} to ${F.pct2(r.ev_hi)}` }), td(r.win, "pct"), td(r.pf, "num"), td(r.avg_win, "pct2"), td(r.avg_loss, "pct2"),
+    td(r.ev_r, "num", { color: true }), td(r.max_dd, "pct2"), td(r.pos_days, "pct"), td(r.ev_low, "pct2", { color: true }), td(r.ev_high, "pct2", { color: true }),
+    td(r.test_ev, "pct2", { color: true }), td(r.ssr_share, "pct"), td(r.halt_share, "pct"))));
+  t2.append(b2); c2.append(el("div", { class: "tbl" }, sortable(t2))); pane.append(c2);
+
+  const mg = objs(S.marginals);
+  const c3 = el("div", { class: "card" }, el("h3", { text: "Which choices matter, whatever else you pick" }),
+    el("p", { class: "note", text: "Average EV of every tested setup that uses a given choice, across all other parameters. Robust choices lift the whole distribution, not just one tuned setup." }));
+  const dimName = { sig: "Signal", timing: "Entry timing", stop: "Stop", target: "Exit", hold: "Max hold" };
+  const lbl = (d, v) => d === "sig" ? sigName(v) : d === "timing" ? (META.timings[v] || v) : d === "stop" ? (META.stops[v] || v) : d === "target" ? (META.targets[v] || v) : (+v >= 999 ? "End of day" : v + " min");
+  const grid = el("div", { class: "row2" });
+  for (const d of ["timing", "stop", "target", "hold", "sig"]) {
+    const rows = mg.filter(r => r.dimension === d).sort((a, b) => b.mean_ev - a.mean_ev);
+    if (!rows.length) continue;
+    const t = el("table", {}, el("thead", {}, el("tr", {}, [dimName[d], "Mean EV", "Share positive", "Best EV", "Setups"].map((h, i) => el("th", { class: i ? "n" : "", text: h })))));
+    const b = el("tbody"); rows.forEach(r => b.append(el("tr", {}, el("td", { class: "tw", text: lbl(d, r.value) }), td(r.mean_ev, "pct2", { color: true }), td(r.share_positive, "pct"), td(r.best_ev, "pct2", { color: true }), td(r.configs, "int"))));
+    t.append(b); grid.append(el("div", {}, el("h3", { style: "margin-bottom:8px", text: dimName[d] }), el("div", { class: "tbl" }, sortable(t))));
+  }
+  c3.append(grid); pane.append(c3);
+
+  const folds = S.wf_folds || [];
+  if (folds.length) {
+    const c4 = el("div", { class: "card" }, el("h3", { text: "Walk-forward weeks" }), el("p", { class: "note", text: "Each test week, the setup chosen from earlier weeks, and how it did that week." }));
+    const t = el("table", {}, el("thead", {}, el("tr", {}, ["Test week", "Picked setup", "Train EV", "Train trades", "Test EV", "Test trades"].map((h, i) => el("th", { class: i > 1 ? "n" : "", text: h })))));
+    const b = el("tbody");
+    folds.forEach(f => b.append(el("tr", {}, el("td", { class: "n", text: String(f.test_week + 1) }),
+      el("td", { class: "tw wide", text: `${sigName(f.pick_sig)} → ${META.timings[f.pick_timing] || f.pick_timing}; ${META.stops[f.pick_stop] || f.pick_stop}; ${META.targets[f.pick_target] || f.pick_target}; ${f.pick_hold >= 999 ? "EOD" : f.pick_hold + " min"}; ${f.pick_window}` }),
+      td(f.train_ev, "pct2", { color: true }), td(f.train_n, "int"), td(f.test_n ? f.test_sum / f.test_n : null, "pct2", { color: true }), td(f.test_n, "int"))));
+    t.append(b); c4.append(el("div", { class: "tbl" }, t)); pane.append(c4);
+  }
+}
+
+/* ---------------------------------------------------------- stages tab */
+async function renderStages() {
+  const pane = $("#pane-stages"); pane.replaceChildren();
+  const S = await load("stages.json"), T = objs(S.table), TM = objs(S.transitions);
+  const c = el("div", { class: "card" }, el("h3", { text: "Frontside to backside, one stage at a time" }),
+    el("p", { class: "note", text: "Each bar is labelled using only what was visible at its close. Stage 4 is the early warning, stage 5 the confirmed backside. Forward columns describe what happened after the stage began. Click a stage for its sessions." }));
+  const cols = ["Stage", "Segments", "Sessions", "Median start", "Median length", "Median range", "Rel. volume", "Red/green vol", "Below VWAP", "9<20 EMA", "→ next stage", "Reverses", "Worked−failed after start", "New low ≤15m", "Avg 30m return (short)", "New high by close", "Confirmed ≤30m"];
+  const t = el("table", {}, el("thead", {}, el("tr", {}, cols.map((h, i) => el("th", { class: i ? "n" : "", text: h })))));
+  const b = el("tbody");
+  T.forEach(r => b.append(el("tr", { class: "click", onclick: () => openCohort({ kind: "segments", stage: r.stage }, `Stage ${r.stage}: ${r.name}`) },
+    el("td", {}, el("span", { class: "stg" }, el("i", { style: `background:var(--st${r.stage})` }), `${r.stage}. ${r.name}`)),
+    td(r.segments, "int"), td(r.sessions, "int"), td(r.start_med, "hm"), td(r.dur_med, "min"), td(r.range_med, "pct"), td(r.rel_vol_med, "x"), td(r.rg_vol_med, "x"),
+    td(r.below_vwap, "pct"), td(r.e9_below_e20, "pct"), td(r.p_next, "pct"), td(r.p_reverse, "pct"), td(r.fwd_edge, "pts", { color: true }), td(r.fwd_nml_15, "pct"),
+    td(r.fwd_30, "pct2", { color: true }), td(r.fwd_nhod_eod, "pct"), td(r.reach5_30, "pct"))));
+  t.append(b); c.append(el("div", { class: "tbl" }, sortable(t))); pane.append(c);
+  // transition matrix
+  const st = [...new Set(TM.map(r => r.stage))].sort((a, b) => a - b), nx = [...new Set(TM.map(r => r.next))].sort((a, b) => a - b);
+  const c2 = el("div", { class: "card" }, el("h3", { text: "Where each stage goes next" }), el("p", { class: "note", text: "Share of segments of the row stage that were followed by the column stage. “Close” = the session ended in that stage." }));
+  const t2 = el("table", { class: "heat" }, el("thead", {}, el("tr", {}, el("th", { text: "From \\ to" }), nx.map(n => el("th", { class: "n", text: n < 0 ? "Close" : String(n) })))));
+  const b2 = el("tbody");
+  for (const s of st) b2.append(el("tr", {}, el("td", { text: `${s}. ${META.stages[s].name}` }), nx.map(n => { const r = TM.find(x => x.stage === s && x.next === n); const v = r ? r.p : 0;
+    return el("td", { class: "hc", style: `background:color-mix(in srgb, ${css("--accent")} ${Math.round(Math.min(1, v) * 80)}%, transparent)`, text: v ? F.pct(v, 0) : "" }); })));
+  t2.append(b2); c2.append(el("div", { class: "tbl" }, t2));
+  const rules = el("dl", { class: "prose" }, Object.entries(META.stages).filter(([k]) => +k > 0).flatMap(([k, v]) => [el("dt", {}, el("span", { class: "stg" }, el("i", { style: `background:var(--st${k})` }), `${k}. ${v.name}`)), el("dd", { text: v.rule })]));
+  pane.append(el("div", { class: "row2" }, c2, el("div", { class: "card" }, el("h3", { text: "Stage rules" }), rules)));
+}
+
+/* ------------------------------------------------------- questions tab */
+function renderQuestions(fs) {
+  const pane = $("#pane-questions"); pane.replaceChildren();
+  const rest = fs.slice(3);
+  if (!rest.length) { pane.append(el("div", { class: "empty", text: "No detailed results yet." })); return; }
+  const box = el("div", { class: "answers", style: "margin-top:0" });
+  rest.forEach(f => { const [cls, txt] = STATUS[f.status] || ["", f.status];
+    box.append(el("article", { class: "answer", style: "grid-template-columns:minmax(0,1fr)" }, el("div", {},
+      el("div", { style: "display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center" }, el("h2", { text: f.question }), el("span", { class: "chip " + cls, text: txt }), f.hindsight ? el("span", { class: "chip warn", text: "Uses hindsight" }) : null),
+      el("p", { class: "text", text: f.answer }), el("div", { class: "nums" }, (f.numbers || []).map(statButton))))); });
+  pane.append(box);
+}
+
+/* -------------------------------------------------------- sessions tab */
+async function renderSessions() {
+  const pane = $("#pane-sessions"); pane.replaceChildren();
+  const rows = [...await sessions()].sort((a, b) => b.date.localeCompare(a.date) || a.ticker.localeCompare(b.ticker));
+  const c = el("div", { class: "card" }, el("h3", { text: "Every qualifying session" }), el("p", { class: "note", text: "Traded below $1.00 with 5M+ shares that day. Includes sessions that ran, faded, halted or did nothing. Click one to open its chart with every signal marked." }));
+  const q = el("input", { type: "search", id: "sess-q", placeholder: "Filter by ticker or date", "aria-label": "Filter sessions" });
+  c.append(el("div", { class: "controls" }, q, el("span", { class: "muted", id: "sess-n" })));
+  const t = el("table", {}, el("thead", {}, el("tr", {}, ["Date", "Ticker", "Prior close", "High", "High at", "Low", "Close", "Volume", "Furthest stage", "SSR", "Suspected halts"].map((h, i) => el("th", { class: i > 1 ? "n" : "", text: h })))));
+  const b = el("tbody"); t.append(b); c.append(el("div", { class: "tbl", style: "max-height:70vh" }, sortable(t))); pane.append(c);
+  let shown = 0, list = rows;
+  const more = el("button", { class: "btn", style: "margin-top:10px", text: "Show more" });
+  const paint = (reset) => { if (reset) { b.replaceChildren(); shown = 0; }
+    for (const r of list.slice(shown, shown + 200)) b.append(el("tr", { class: "click", onclick: () => openChart(r.sid, r.date, {}) },
+      el("td", { text: r.date }), el("td", { text: r.ticker }), td(r.pc, "px"), td(r.hod, "px"), td(r.hod_mod, "hm"), td(r.lod, "px"), td(r.close, "px"), td(r.volume, "int"),
+      el("td", { class: "n" }, el("span", { class: "stg" }, el("i", { style: `background:var(--st${r.max_stage})` }), String(r.max_stage))), el("td", { class: "n", text: r.ssr_any ? "yes" : "" }), td(r.halts, "int")));
+    shown = Math.min(list.length, shown + 200); $("#sess-n").textContent = `${F.int(list.length)} sessions`; more.hidden = shown >= list.length; };
+  more.addEventListener("click", () => paint(false)); c.append(more);
+  q.addEventListener("input", () => { const s = q.value.trim().toUpperCase(); list = s ? rows.filter(r => r.ticker.includes(s) || r.date.includes(s)) : rows; paint(true); });
+  paint(true);
+}
+
+/* ---------------------------------------------------------- method tab */
+function renderMethod(m) {
+  const pane = $("#pane-method"); pane.replaceChildren();
+  const c = m.costs, u = m.universe;
+  pane.append(el("div", { class: "row2" },
+    el("div", { class: "card prose" }, el("h3", { text: "What is in the database" }),
+      el("p", { text: `Every exchange-listed common stock whose official daily bar traded below $${u.max_low.toFixed(2)} with at least ${F.int(u.min_volume)} shares of volume, ${m.window.start} to ${m.window.end} (rolling ${m.window.months} months). The whole session is kept, including any time above $1, and nothing is filtered by outcome. Prices are unadjusted, so stocks that later reverse-split are still counted at the price they traded. OTC securities, warrants, units, rights, preferreds and funds are excluded.` }),
+      el("p", { text: "The universe is chosen with end-of-day information (the day's low and total volume). The “Universe known in real time” split repeats the signal analysis using only signals where the stock had already traded below $1 (or closed below $1 the day before) and printed 1M+ shares by the signal time." })),
+    el("div", { class: "card prose" }, el("h3", { text: "How each trade is costed" }),
+      el("ul", {}, el("li", { text: `Spread: estimated from 1-minute bars (Abdi–Ranaldo), floored at ${c.spread_floor_ticks} ticks or ${c.spread_floor_bps} bps. Half the spread is paid on every market order.` }),
+        el("li", { text: `Slippage: ${c.slippage_bps} bps per market order; stop orders also lose ${Math.round(c.stop_slip_range_frac * 100)}% of the bar's range.` }),
+        el("li", { text: `Commission: $${c.commission_per_share}/share, min $${c.commission_min}, capped at ${(c.commission_cap_pct * 100).toFixed(1)}% of value, on a $${F.int(c.notional_usd)} position.` }),
+        el("li", { text: `Locate: ${(c.locate_pct * 100).toFixed(2)}% of the position on every trade.` }),
+        el("li", { text: "Rule 201 (SSR): triggered by a 10% drop from the prior close and carried to the next day. While active, a short must rest on the offer and fills only if price ticks back up through it within 2 bars; break-of-low entries are skipped." }),
+        el("li", { text: "Halts: a 5+ minute gap in regular hours is treated as a suspected halt. Stops fill at the reopen print." }),
+        el("li", { text: "Profit targets fill only when price trades a tick through them. A bar that touches both stop and target counts as stopped." }),
+        el("li", { text: `Margin: shorts under $5 need the greater of $${c.margin_per_share_under_5.toFixed(2)}/share or 100% of value (FINRA 4210), so a $0.50 short ties up about 5× its value. Many brokers will not short sub-$1 stocks at all, and borrow availability is not in the data.` })))));
+  const sg = el("div", { class: "card prose", style: "max-width:none" }, el("h3", { text: "Signal definitions" }),
+    el("p", { text: "A new high of day starts a new epoch. Each signal fires at most once per epoch, at a bar close, using only data available then. Swing highs and lows use 2 bars on each side and count from the bar that confirms them." }),
+    el("dl", {}, Object.entries(m.signals).flatMap(([k, v]) => [el("dt", { text: `${v.name}` }), el("dd", { text: v.def })])));
+  pane.append(sg);
+  pane.append(el("div", { class: "card prose", style: "max-width:none" }, el("h3", { text: "Limits of this study" }),
+    el("ul", {}, el("li", { text: "Quotes are not in the data, so spreads are estimated. Use the low/high cost columns to see how sensitive each result is." }),
+      el("li", { text: "Historical borrow availability and locate prices are not available; every short is assumed borrowable at the stated cost." }),
+      el("li", { text: "Order of prints inside a 1-minute bar is unknown; ties are resolved against the trade." }),
+      el("li", { text: "Thousands of setups were tested. In-sample bests are optimistic; the walk-forward and test-period numbers are the ones to act on." }),
+      el("li", { text: "Three months is a short history. Results can change with market regime, and the dashboard re-estimates everything as new sessions arrive." }))));
+}
+
+/* --------------------------------------------------------- drill-down */
+let drawerRows = [], drawerShown = 0, drawerKind = "";
+const drawer = $("#drawer"), scrim = $("#scrim");
+function closeDrawer() { drawer.hidden = true; scrim.hidden = true; }
+$("#d-close").addEventListener("click", closeDrawer); scrim.addEventListener("click", closeDrawer);
+document.addEventListener("keydown", e => { if (e.key === "Escape") { if (!$("#sheet").hidden) closeSheet(); else closeDrawer(); } });
+
+let SESS = null;
+async function sessions() { if (!SESS) SESS = objs(await load("sessions.json")); return SESS; }
+const COARSE = [["Pre-market", 0, 570], ["Before 10:00", 570, 600], ["10:00-11:00", 600, 660], ["11:00-12:00", 660, 720], ["Afternoon", 720, 1440]];
+const coarseOf = m => (COARSE.find(([, a, b]) => m >= a && m < b) || ["?"])[0];
+const tod15Of = m => m < 570 ? -1 : Math.min(25, Math.floor((m - 570) / 15));
+async function withSession(rows) {
+  const S = await sessions();
+  for (const r of rows) { const x = S[r.s]; if (x) { r.sid = x.sid; r.ticker = x.ticker; r.date = x.date; } }
+  return rows;
+}
+const evCache = new Map();
+async function eventsFor(sig) {
+  if (!evCache.has(sig)) evCache.set(sig, (async () => {
+    const rows = await withSession(objs(await load(`events/${sig}.json`)));
+    const L = META.slice_labels || {};
+    for (const r of rows) {
+      r.sig = sig; r.coarse = coarseOf(r.mod); r.tod15 = tod15Of(r.mod);
+      for (const k in L) if (typeof r[k] === "number") r[k] = L[k][r[k]];
+    }
+    return rows;
+  })());
+  return evCache.get(sig);
+}
+const ALL_SIGS = () => Object.keys(META.signals).filter(k => k !== "B00");
+async function openCohort(c, title) {
+  if (!c) return;
+  drawer.hidden = false; scrim.hidden = false; $("#d-title").textContent = title || ""; $("#d-sum").replaceChildren(el("span", { text: "Loading…" }));
+  const body = $("#d-body"); body.replaceChildren();
+  try {
+    if (c.kind === "events") {
+      let rows = [];
+      if (c.pooled) { const seen = new Set(); for (const s of ALL_SIGS()) { let r; try { r = await eventsFor(s); } catch { continue; } for (const x of r) { const k = x.sid + "|" + x.idx; if (!seen.has(k)) { seen.add(k); rows.push(x); } } } }
+      else rows = await eventsFor(c.sig);
+      for (const [k, v] of Object.entries(c.where || {})) rows = rows.filter(r => r[k] === v || String(r[k]) === String(v));
+      showEvents(rows, c);
+    } else if (c.kind === "trades" || c.kind === "walkforward") {
+      const S = await load("strategies.json");
+      let rows = await withSession(objs(await load("trades.json")));
+      if (c.kind === "walkforward") {
+        const sess = await sessions(); const days = [...new Set(sess.map(s => s.date))].sort();
+        const d0 = new Date(days[0] + "T12:00:00Z"); const mon = new Date(d0); mon.setUTCDate(d0.getUTCDate() - ((d0.getUTCDay() + 6) % 7));
+        const wk = d => Math.floor((new Date(d + "T12:00:00Z") - mon) / 864e5 / 7);
+        const keep = []; for (const f of S.wf_folds) { const [a, b] = f.pick_window.split("-").map(hmToMin);
+          keep.push(...rows.filter(r => r.cid === f.pick_cid && wk(r.date) === f.test_week && r.entry_mod >= a && r.entry_mod < b)); }
+        rows = keep;
+      } else {
+        rows = rows.filter(r => r.cid === c.cid);
+        if (c.window) { const [a, b] = c.window.split("-").map(hmToMin); rows = rows.filter(r => r.entry_mod >= a && r.entry_mod < b); }
+        if (c.before != null) rows = rows.filter(r => r.entry_mod < c.before);
+        if (c.after != null) rows = rows.filter(r => r.entry_mod >= c.after);
+        if (c.from) rows = rows.filter(r => r.date >= c.from);
+        if (c.bucket != null) rows = rows.filter(r => (r.entry_mod < 570 ? -1 : Math.min(25, Math.floor((r.entry_mod - 570) / 15))) === c.bucket);
+      }
+      showTrades(rows, c);
+    } else if (c.kind === "segments") {
+      const rows = await withSession(objs(await load(`segments/${c.stage}.json`)));
+      showSegments(rows);
+    } else if (c.kind === "pbo") {
+      const S = await load("strategies.json");
+      $("#d-sum").replaceChildren(el("span", {}, "PBO ", el("b", { text: F.pct(S.pbo.pbo, 0) })), el("span", {}, el("b", { text: F.int(S.pbo.splits) }), " splits"));
+      body.append(el("p", { class: "muted", text: "Weeks are split into blocks; every half of the blocks is used once to pick the best setup and the other half to test it. PBO is the share of splits where the pick finished below the median setup out of sample." }));
+    } else if (c.kind === "marginals") {
+      document.querySelector('[data-tab="strategies"]').click(); closeDrawer();
+    }
+  } catch (err) { body.append(el("div", { class: "empty", text: "Could not load this list: " + err.message })); }
+}
+function sumLine(items) { $("#d-sum").replaceChildren(...items.map(([k, v]) => el("span", {}, k + " ", el("b", { text: v })))); }
+function pager(render) {
+  const body = $("#d-body"); const more = el("button", { class: "btn", style: "margin:12px 0", text: "Show more" });
+  const go = () => { render(drawerShown, drawerShown + 150); drawerShown = Math.min(drawerRows.length, drawerShown + 150); more.hidden = drawerShown >= drawerRows.length; };
+  more.addEventListener("click", go); drawerShown = 0; go(); body.append(more);
+}
+function showEvents(rows, c) {
+  rows.sort((a, b) => b.date.localeCompare(a.date) || a.mod - b.mod); drawerRows = rows;
+  const m = k => { const v = rows.map(r => r[k]).filter(isNum); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN; };
+  const med = k => { const v = rows.map(r => r[k]).filter(isNum).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : NaN; };
+  const w = rows.filter(r => r.fp_atr === 0).length, f = rows.filter(r => r.fp_atr === 1).length;
+  sumLine([["Signals", F.int(rows.length)], ["Sessions", F.int(new Set(rows.map(r => r.sid)).size)], ["Worked", F.pct(w / Math.max(1, rows.length))], ["Failed", F.pct(f / Math.max(1, rows.length))],
+    ["Median drop 30m", F.pct(med("mfe_30"))], ["Median rise 30m", F.pct(med("mae_30"))], ["New low ≤15m", F.pct(m("nml_15"))]]);
+  const t = el("table", {}, el("thead", {}, el("tr", {}, ["Date", "Ticker", "Time", "Signal", "Price", "Outcome", "Drop 30m", "Rise 30m", "New low ≤15m", "Min after high"].map((h, i) => el("th", { class: i > 3 ? "n" : "", text: h })))));
+  const tb = el("tbody"); t.append(tb); $("#d-body").append(el("div", { class: "tbl" }, t));
+  if (!rows.length) { $("#d-body").append(el("div", { class: "empty", text: "No signals match." })); return; }
+  pager((a, b) => { for (const r of rows.slice(a, b)) tb.append(el("tr", { class: "click", onclick: () => openChart(r.sid, r.date, { sig: r.idx, sigCode: r.sig }) },
+    el("td", { text: r.date }), el("td", { text: r.ticker }), el("td", { class: "mono", text: F.hm(r.mod) }), el("td", { class: "tw", text: sigName(r.sig) }), td(r.price, "px"),
+    el("td", { class: "n " + (r.fp_atr === 0 ? "pos" : r.fp_atr === 1 ? "neg" : "muted"), text: r.fp_atr === 0 ? "worked" : r.fp_atr === 1 ? "failed" : "neither" }),
+    td(r.mfe_30, "pct"), td(r.mae_30, "pct"), el("td", { class: "n", text: r.nml_15 === 1 ? "yes" : r.nml_15 === 0 ? "no" : "—" }), td(r.mins_since_hod, "min"))); });
+}
+const REASON = ["stop", "target", "trailing stop", "time"];
+function showTrades(rows, c) {
+  rows.sort((a, b) => b.date.localeCompare(a.date) || a.entry_mod - b.entry_mod); drawerRows = rows;
+  const r_ = rows.map(r => r.r), n = r_.length, ev = n ? r_.reduce((a, b) => a + b, 0) / n : NaN;
+  sumLine([["Trades", F.int(n)], ["EV / trade", F.pct2(ev)], ["Win rate", F.pct(n ? r_.filter(x => x > 0).length / n : NaN)], ["Total", F.pct2(r_.reduce((a, b) => a + b, 0))],
+    ["Sessions", F.int(new Set(rows.map(r => r.sid)).size)]]);
+  const t = el("table", {}, el("thead", {}, el("tr", {}, ["Date", "Ticker", "Short at", "Price", "Covered at", "Price", "Exit", "Net", "SSR"].map((h, i) => el("th", { class: i > 1 ? "n" : "", text: h })))));
+  const tb = el("tbody"); t.append(tb); $("#d-body").append(el("div", { class: "tbl" }, t));
+  if (!rows.length) { $("#d-body").append(el("div", { class: "empty", text: "No trades match." })); return; }
+  pager((a, b) => { for (const r of rows.slice(a, b)) tb.append(el("tr", { class: "click", onclick: () => openChart(r.sid, r.date, { sig: r.sig_idx, entry: r.entry_idx, exit: r.exit_idx, entryPx: r.entry_px, exitPx: r.exit_px }) },
+    el("td", { text: r.date }), el("td", { text: r.ticker }), el("td", { class: "n mono", text: F.hm(r.entry_mod) }), td(r.entry_px, "px"), el("td", { class: "n mono", text: F.hm(r.exit_mod) }), td(r.exit_px, "px"),
+    el("td", { class: "n", text: REASON[r.reason] }), td(r.r, "pct2", { color: true }), el("td", { class: "n", text: r.ssr ? "yes" : "" }))); });
+}
+function showSegments(rows) {
+  rows.sort((a, b) => b.date.localeCompare(a.date) || a.start_mod - b.start_mod); drawerRows = rows;
+  const med = k => { const v = rows.map(r => r[k]).filter(isNum).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : NaN; };
+  sumLine([["Segments", F.int(rows.length)], ["Sessions", F.int(new Set(rows.map(r => r.sid)).size)], ["Median length", F.min(med("dur_min"))], ["Median range", F.pct(med("range_pct"))]]);
+  const t = el("table", {}, el("thead", {}, el("tr", {}, ["Date", "Ticker", "Start", "End", "Length", "Range", "Next stage", "Short 30m after start"].map((h, i) => el("th", { class: i > 1 ? "n" : "", text: h })))));
+  const tb = el("tbody"); t.append(tb); $("#d-body").append(el("div", { class: "tbl" }, t));
+  pager((a, b) => { for (const r of rows.slice(a, b)) tb.append(el("tr", { class: "click", onclick: () => openChart(r.sid, r.date, { seg: [r.a, r.b] }) },
+    el("td", { text: r.date }), el("td", { text: r.ticker }), el("td", { class: "n mono", text: F.hm(r.start_mod) }), el("td", { class: "n mono", text: F.hm(r.end_mod) }), td(r.dur_min, "min"), td(r.range_pct, "pct"),
+    el("td", { class: "n", text: r.next < 0 ? "close" : String(r.next) }), td(r.fwd_30, "pct2", { color: true }))); });
+}
+
+/* --------------------------------------------------------------- chart */
+let chart = null;
+function closeSheet() { $("#sheet").hidden = true; if (chart) { chart.remove(); chart = null; } }
+$("#s-close").addEventListener("click", closeSheet);
+function decode(s) {
+  const n = s.dc.length + 1, t = new Array(n), c = new Array(n);
+  t[0] = s.t0; c[0] = s.c0; for (let i = 1; i < n; i++) { t[i] = t[i - 1] + s.dt[i - 1]; c[i] = c[i - 1] + s.dc[i - 1]; }
+  const bars = [];
+  for (let i = 0; i < n; i++) { const pc = i ? c[i - 1] : c[0]; bars.push({ m: t[i], o: (pc + s.do[i]) / 1e4, h: (c[i] + s.dh[i]) / 1e4, l: (c[i] - s.dl[i]) / 1e4, c: c[i] / 1e4, vw: (c[i] + s.dv[i]) / 1e4, v: s.v[i] }); }
+  const a9 = 2 / 10, a20 = 2 / 21; let e9 = s.e9_0 ?? bars[0].c, e20 = s.e20_0 ?? bars[0].c;
+  bars.forEach((b, i) => { if (i) { e9 = a9 * b.c + (1 - a9) * e9; e20 = a20 * b.c + (1 - a20) * e20; } b.e9 = e9; b.e20 = e20; });
+  const stage = []; for (const [v, k] of s.st) for (let j = 0; j < k; j++) stage.push(v);
+  return { bars, stage };
+}
+async function openChart(sid, date, mk) {
+  const sheet = $("#sheet"); sheet.hidden = false;
+  const box = $("#s-chart"); box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Loading chart…" }));
+  let day; try { day = await load(`charts/${date}.json`); } catch (e) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Chart file missing for " + date })); return; }
+  const s = day.sessions.find(x => x.sid === sid);
+  if (!s) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Session not found." })); return; }
+  const { bars, stage } = decode(s);
+  $("#s-title").textContent = `${s.ticker} · ${date}`;
+  $("#s-meta").textContent = `prior close ${F.px(s.pc)}${s.ssr_from != null ? ` · SSR from ${F.hm(s.ssr_from)}` : ""}${s.gaps.length ? ` · suspected halts ${s.gaps.map(F.hm).join(", ")}` : ""}`;
+  box.replaceChildren(); if (chart) chart.remove();
+  const [y, mo, d] = date.split("-").map(Number), base = Date.UTC(y, mo - 1, d) / 1000, T = m => base + m * 60;
+  chart = LightweightCharts.createChart(box, { autoSize: true, layout: { background: { type: "solid", color: css("--panel") }, textColor: css("--ink-2"), fontFamily: "IBM Plex Mono, monospace" },
+    grid: { vertLines: { color: css("--line") }, horzLines: { color: css("--line") } }, rightPriceScale: { borderColor: css("--line") },
+    timeScale: { borderColor: css("--line"), timeVisible: true, secondsVisible: false }, crosshair: { mode: 0 } });
+  const prec = bars[0].c < 1 ? 4 : 2;
+  const cs = chart.addCandlestickSeries({ upColor: css("--up"), downColor: css("--down"), wickUpColor: css("--up"), wickDownColor: css("--down"), borderVisible: false,
+    priceFormat: { type: "price", precision: prec, minMove: prec === 4 ? 0.0001 : 0.01 } });
+  cs.setData(bars.map(b => ({ time: T(b.m), open: b.o, high: b.h, low: b.l, close: b.c })));
+  const line = (k, col) => { const l = chart.addLineSeries({ color: col, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+    l.setData(bars.map(b => ({ time: T(b.m), value: b[k] }))); };
+  line("e9", css("--e9")); line("e20", css("--e20")); line("vw", css("--vwap"));
+  const vol = chart.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false });
+  chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0.04 } });
+  vol.setData(bars.map(b => ({ time: T(b.m), value: b.v, color: b.c >= b.o ? css("--up") + "66" : css("--down") + "66" })));
+  const stg = chart.addHistogramSeries({ priceScaleId: "stg", priceLineVisible: false, lastValueVisible: false });
+  chart.priceScale("stg").applyOptions({ scaleMargins: { top: 0.975, bottom: 0 }, visible: false });
+  stg.setData(bars.map((b, i) => ({ time: T(b.m), value: 1, color: css("--st" + (stage[i] ?? 0)) })));
+  const marks = [];
+  for (const [i, code] of s.ev || []) if (i < bars.length && (mk.sig == null || i !== mk.sig)) marks.push({ time: T(bars[i].m), position: "aboveBar", color: css("--ink-3"), shape: "circle", size: 0.4, text: "" });
+  if (mk.sig != null && mk.sig < bars.length) marks.push({ time: T(bars[mk.sig].m), position: "aboveBar", color: css("--warn"), shape: "arrowDown", text: mk.sigCode ? sigName(mk.sigCode) : "signal" });
+  if (mk.entry != null && mk.entry < bars.length) marks.push({ time: T(bars[mk.entry].m), position: "aboveBar", color: css("--bad"), shape: "arrowDown", text: "short " + F.px(mk.entryPx) });
+  if (mk.exit != null && mk.exit < bars.length) marks.push({ time: T(bars[mk.exit].m), position: "belowBar", color: css("--good"), shape: "arrowUp", text: "cover " + F.px(mk.exitPx) });
+  marks.sort((a, b) => a.time - b.time); cs.setMarkers(marks);
+  const focus = mk.entry ?? mk.sig ?? (mk.seg ? mk.seg[0] : null);
+  if (focus != null) chart.timeScale().setVisibleRange({ from: T(bars[Math.max(0, focus - 60)].m), to: T(bars[Math.min(bars.length - 1, (mk.exit ?? focus) + 60)].m) });
+  else chart.timeScale().fitContent();
+  const foot = $("#s-foot"); foot.replaceChildren(
+    el("div", { class: "legend", style: "margin:0" }, Object.entries(META.stages).map(([k, v]) => el("span", { class: "stg" }, el("i", { style: `background:var(--st${k})` }), `${k} ${v.name}`))),
+    el("div", { class: "muted", text: `Signals in this session: ${(s.ev || []).length}. Gray dots mark them; the highlighted arrow is the one you clicked. The colored strip under the candles is the live stage.` }));
+}
+
+/* ----------------------------------------------------------------- boot */
+const RENDER = { signals: renderSignals, time: renderTime, strategies: renderStrategies, stages: renderStages, sessions: renderSessions };
+const done = new Set();
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  document.querySelectorAll(".pane").forEach(p => p.hidden = p.id !== "pane-" + name);
+  if (RENDER[name] && !done.has(name)) { done.add(name); RENDER[name]().catch(e => $("#pane-" + name).replaceChildren(el("div", { class: "empty", text: "Could not load: " + e.message }))); }
+  try { localStorage.setItem("bse-tab", name); } catch {}
+}
+document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+(async () => {
+  try {
+    META = await load("summary.json");
+    renderHeader(META); renderAnswers(META.findings); renderKpis(META.kpis); renderQuestions(META.findings); renderMethod(META);
+    let t = "signals"; try { t = localStorage.getItem("bse-tab") || t; } catch {}
+    showTab(RENDER[t] || t === "questions" || t === "method" ? t : "signals");
+  } catch (e) {
+    $("#tape").replaceChildren(el("span", { text: "No data has been loaded into this dashboard yet." }));
+    $("#answers").replaceChildren(el("div", { class: "empty", style: "margin-top:20px", text: "The database is empty. Once the first collection runs, the three answers appear here." }));
+  }
+})();
+</script>
