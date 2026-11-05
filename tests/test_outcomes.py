@@ -40,3 +40,17 @@ def test_chart_week_is_monday():
     assert _week("2026-10-16") == "2026-10-12"   # Friday -> Monday
     assert _week("2026-10-12") == "2026-10-12"   # Monday stays
     assert _week("2026-11-01") == "2026-10-26"   # Sunday -> previous Monday
+
+
+def test_event_slices_tolerate_missing_gain():
+    import numpy as np
+    import pandas as pd
+    from bse.report import _event_slices
+    n = 4
+    ev = pd.DataFrame({"gain_pc": [0.5, np.nan, 2.0, 1.0], "after_true_hod": [True, False, True, False],
+                       "mins_since_hod": [5, 30, 90, 0], "e9_above_e20": [True, False, True, False],
+                       "below_vwap": [False, True, False, True], "price": [0.5, 0.8, 0.3, 0.9],
+                       "known_sub1": [True] * n, "cumvol": [2e6, 6e6, 1e6, 9e6]})
+    e, labels = _event_slices(ev)
+    assert "n/a" in labels["c_gain"]
+    assert e["c_gain"].dtype.kind == "i"

@@ -70,7 +70,9 @@ def _event_slices(ev: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     src = e[["gain_pc", "after_true_hod", "mins_since_hod", "e9_above_e20", "below_vwap", "price", "known_sub1", "cumvol"]]
     labels = {}
     for dim in SLICE_DIMS:
-        lab = fd._ctx_events(src, dim)[dim].astype(str)
+        # a missing input (e.g. no prior close, so no gain) gives no label: show it as "n/a"
+        raw = fd._ctx_events(src, dim)[dim]
+        lab = raw.astype(object).where(raw.notna(), "n/a").astype(str)
         cats = sorted(set(lab))
         labels[dim] = cats
         e[dim] = lab.map({c: i for i, c in enumerate(cats)}).astype(int)
