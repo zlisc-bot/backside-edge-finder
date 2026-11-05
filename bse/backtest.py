@@ -75,6 +75,12 @@ def spread_frac(s: SessionData, costs: Costs) -> np.ndarray:
     return np.clip(sp, 0.0, costs.spread_cap_bps / 1e4)
 
 
+def sell_fee_frac(price: np.ndarray, costs: Costs) -> np.ndarray:
+    """Regulatory fee on the short sale (FINRA TAF), as a fraction of its value."""
+    per = costs.sell_fee_per_share / np.maximum(price, 1e-6)
+    return np.minimum(per, costs.sell_fee_max / costs.notional_usd)
+
+
 def zero_costs(costs: Costs) -> Costs:
     """Same execution rules (SSR resting orders, stop and target fills), no frictions."""
     import copy
@@ -82,6 +88,7 @@ def zero_costs(costs: Costs) -> Costs:
     z.spread_floor_ticks, z.spread_floor_bps, z.spread_mult = 0, 0.0, 0.0
     z.slippage_bps, z.stop_slip_range_frac = 0.0, 0.0
     z.commission_per_share, z.commission_min, z.locate_pct = 0.0, 0.0, 0.0
+    z.sell_fee_per_share = 0.0
     return z
 
 
@@ -368,7 +375,7 @@ def net_returns(s: SessionData, ent: Entries, sim: SimResult, costs: Costs) -> n
     extra = sp[j] / 2 + slip + np.where(sim.stop_market, costs.stop_slip_range_frac * rng[j], 0.0)
     p_out = np.where(limit_exit, sim.p_exit, sim.p_exit * (1 + extra))
     gross = (p_in - p_out) / p_in
-    fee_in = commission_frac(ent.price, costs)[:, None, None, None]
+    fee_in = (commission_frac(ent.price, costs) + sell_fee_frac(ent.price, costs))[:, None, None, None]
     fee_out = commission_frac(sim.p_exit, costs) * sim.p_exit / P
     return gross - fee_in - fee_out - costs.locate_pct
 
@@ -549,6 +556,7 @@ def trades_for(s: SessionData, perbar: dict, events: list[dict], cfg: Config,
                     "r_gross": float(rs["gross"][k, sk, gk, hk]),
                     # where the base-case costs went, as fractions of the entry price
                     "c_comm": float(commission_frac(np.array([ent.price[k]]), cfg.costs)[0]
+                                    + sell_fee_frac(np.array([ent.price[k]]), cfg.costs)[0]
                                     + commission_frac(np.array([sim.p_exit[k, sk, gk, hk]]), cfg.costs)[0]
                                     * sim.p_exit[k, sk, gk, hk] / ent.price[k]),
                     "c_locate": float(cfg.costs.locate_pct),

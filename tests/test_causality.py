@@ -3,7 +3,7 @@ was already known at that minute (signals, their context fields, stages)."""
 import numpy as np
 import pandas as pd
 
-from bse.config import load_config
+from bse.config import Config
 from bse.indicators import prepare_session
 from bse.signals import detect
 from bse.stages import classify
@@ -36,7 +36,7 @@ def _key(evs, upto):
 
 
 def test_truncation_invariance():
-    cfg = load_config()
+    cfg = Config()          # built-in defaults, not config.local.json
     checked = 0
     for bars, meta in _sessions():
         full = prepare_session(bars, meta, cfg)

@@ -137,6 +137,10 @@ class Costs:
     commission_min: float = 1.0
     commission_cap_pct: float = 0.005        # many brokers cap at 0.5%-1% of value
     locate_pct: float = 0.003                # 0.3% of position per trade
+    # FINRA trading activity fee on every sale (a short sale is a sale), even
+    # at $0-commission brokers: $0.000166/share, at most $8.30 per trade.
+    sell_fee_per_share: float = 0.000166
+    sell_fee_max: float = 8.30
     locate_once_per_session: bool = False
     # Rule 201: "uptick" = shorts must rest on the offer; filled only if price
     # trades back up through the limit within 2 bars. "skip" drops the trade.
@@ -149,12 +153,14 @@ class Costs:
     margin_per_share_under_5: float = 2.50
 
 
+# Multipliers applied to the base costs, so a $0-commission base stays $0 in
+# every scenario.
 COST_SCENARIOS = {
-    "low": dict(spread_mult=0.5, slippage_bps=2.0, stop_slip_range_frac=0.05,
-                commission_per_share=0.0005, commission_cap_pct=0.002, locate_pct=0.0),
+    "low": dict(spread_mult=0.5, slippage_bps=0.4, stop_slip_range_frac=0.5,
+                commission_per_share=0.25, commission_min=0.25, locate_pct=0.0),
     "base": {},
-    "high": dict(spread_mult=1.5, slippage_bps=10.0, stop_slip_range_frac=0.20,
-                 commission_per_share=0.004, commission_cap_pct=0.01, locate_pct=0.01),
+    "high": dict(spread_mult=1.5, slippage_bps=2.0, stop_slip_range_frac=2.0,
+                 commission_per_share=2.0, commission_min=2.0, commission_cap_pct=2.0, locate_pct=3.33),
 }
 
 
@@ -197,8 +203,8 @@ class Config:
 
     def costs_for(self, scenario: str) -> Costs:
         c = copy.deepcopy(self.costs)
-        for k, v in COST_SCENARIOS[scenario].items():
-            setattr(c, k, v)
+        for k, f in COST_SCENARIOS[scenario].items():
+            setattr(c, k, getattr(c, k) * f)
         return c
 
 

@@ -720,7 +720,9 @@ function renderMethod(m) {
     el("div", { class: "card prose" }, el("h3", { text: "How each trade is costed" }),
       el("ul", {}, el("li", { text: `Spread: estimated from 1-minute bars (Abdi–Ranaldo), floored at ${c.spread_floor_ticks} ticks or ${c.spread_floor_bps} bps. Half the spread is paid on every market order.` }),
         el("li", { text: `Slippage: ${c.slippage_bps} bps per market order; stop orders also lose ${Math.round(c.stop_slip_range_frac * 100)}% of the bar's range.` }),
-        el("li", { text: `Commission: $${c.commission_per_share}/share, min $${c.commission_min}, capped at ${(c.commission_cap_pct * 100).toFixed(1)}% of value, on a $${F.int(c.notional_usd)} position.` }),
+        el("li", { text: (c.commission_per_share > 0 || c.commission_min > 0)
+          ? `Commission: $${c.commission_per_share}/share, min $${c.commission_min}, capped at ${(c.commission_cap_pct * 100).toFixed(1)}% of value, on a $${F.int(c.notional_usd)} position.`
+          : `Commission: none ($0 online stock trades). FINRA's trading activity fee of $${c.sell_fee_per_share ?? 0.000166}/share (at most $${(c.sell_fee_max ?? 8.3).toFixed(2)}) is still charged on each short sale, on a $${F.int(c.notional_usd)} position.` }),
         el("li", { text: `Locate: ${(c.locate_pct * 100).toFixed(2)}% of the position on every trade.` }),
         el("li", { text: "Rule 201 (SSR): triggered by a 10% drop from the prior close and carried to the next day. While active, a short must rest on the offer and fills only if price ticks back up through it within 2 bars; break-of-low entries are skipped." }),
         el("li", { text: "Halts: a 5+ minute gap in regular hours is treated as a suspected halt. Stops fill at the reopen print." }),

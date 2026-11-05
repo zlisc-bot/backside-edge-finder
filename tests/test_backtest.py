@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from bse.backtest import Entries, Rule, net_returns, no_overlap, simulate, build_entries
-from bse.config import TZ, load_config
+from bse.config import TZ, Config
 from bse.indicators import prepare_session
 
 DAY = "2026-10-14"
@@ -29,11 +29,12 @@ def make_session(closes, opens=None, highs=None, lows=None, start="09:30", pc=0.
 
 
 def zero_cost_cfg():
-    cfg = load_config()
+    cfg = Config()          # built-in defaults, not config.local.json
     c = cfg.costs
     c.spread_floor_ticks, c.spread_floor_bps, c.spread_mult = 0, 0.0, 0.0
     c.slippage_bps, c.stop_slip_range_frac = 0.0, 0.0
     c.commission_per_share, c.commission_min, c.locate_pct = 0.0, 0.0, 0.0
+    c.sell_fee_per_share = 0.0
     c.ssr_policy = "ignore"
     return cfg
 
@@ -157,3 +158,13 @@ def test_ssr_requires_an_uptick_fill():
     s2 = make_session(closes2, highs=[0.5005] * 31 + [0.5008, 0.5003], pc=0.6, ssr_carry=True)
     ents = [e for e in build_entries(s2, perbar, ev, cfg) if e.tim_i == 0]
     assert len(ents) == 1 and ents[0].passive[0] and ents[0].price[0] == pytest.approx(0.5001)
+
+
+def test_sell_fee_is_charged_on_the_short_sale_only():
+    closes = [0.50] * 31 + [0.499, 0.498, 0.497, 0.496, 0.495, 0.494, 0.493]
+    s = make_session(closes)
+    cfg = zero_cost_cfg()
+    cfg.costs.sell_fee_per_share = 0.000166            # FINRA TAF, $10,000 position
+    sim, r = run(s, entry_at(30, 0.50), [PCT2], [TP1], [999], cfg)
+    # 20,000 shares x $0.000166 = $3.32 on a $10,000 sale = 0.0332%
+    assert r[0, 0, 0, 0] == pytest.approx(0.01 - 0.000332, abs=1e-9)
