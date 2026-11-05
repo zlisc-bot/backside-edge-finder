@@ -11,7 +11,9 @@
   --paper: #F3F5F7; --panel: #FFFFFF; --panel-2: #EBEEF2; --ink: #131820; --ink-2: #4D5866;
   --ink-3: #7A8594; --line: #D8DDE4; --accent: #2C53C9; --accent-soft: #E4EAFB;
   --good: #23784D; --good-soft: #DDF1E6; --bad: #B83A32; --bad-soft: #F8E1DE; --warn: #9A6412; --warn-soft: #F7ECD8;
-  --up: #2E8B57; --down: #C6443B; --e9: #C98512; --e20: #4F55D8; --vwap: #9B3FB0;
+  --up: #2E8B57; --down: #C6443B; --e9: #2FA84F; --e20: #E2B400; --vwap: #2F7ED8;
+  --c-up-body: #FFFFFF; --c-up-line: #8C939C; --c-down: #E0332B; --c-vol-up: #A9AEB5; --c-vol-down: #E0332B;
+  --c-sess: #3AA98A; --c-grid: #EEF0F3; --c-frame: #DDE1E6; --c-wm: rgba(19, 24, 32, 0.07); --c-last: #000000;
   --st1: #8FD1A8; --st2: #2E8B57; --st3: #A8C66C; --st4: #E3B341; --st5: #D9673E; --st6: #B83A32; --st7: #8C6BB1; --st8: #3B82C4; --st0: #CBD2DA;
   --shadow: 0 1px 2px rgb(19 24 32 / 6%), 0 8px 24px rgb(19 24 32 / 8%);
   --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
@@ -22,13 +24,17 @@
   --paper: #0D1015; --panel: #151A21; --panel-2: #1C222B; --ink: #E7EBF0; --ink-2: #A3AEBC; --ink-3: #74808F;
   --line: #2A323D; --accent: #86A2FF; --accent-soft: #1E2A4D; --good: #5CC48C; --good-soft: #15301F;
   --bad: #F07A70; --bad-soft: #3A1B19; --warn: #E2B05A; --warn-soft: #3A2C12;
-  --up: #4CB97C; --down: #E9675C; --e9: #E8A93A; --e20: #8C91FF; --vwap: #D27BE6;
+  --up: #4CB97C; --down: #E9675C; --e9: #4CC46A; --e20: #F0C93A; --vwap: #5AA2F0;
+  --c-up-body: #151A21; --c-up-line: #9AA3AE; --c-down: #F0554C; --c-vol-up: #5D6672; --c-vol-down: #E0473F;
+  --c-sess: #4FBF9F; --c-grid: #222932; --c-frame: #2A323D; --c-wm: rgba(231, 235, 240, 0.07); --c-last: #E7EBF0;
   --st0: #3A434F; --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 35%); color-scheme: dark; } }
 :root[data-theme="dark"] {
   --paper: #0D1015; --panel: #151A21; --panel-2: #1C222B; --ink: #E7EBF0; --ink-2: #A3AEBC; --ink-3: #74808F;
   --line: #2A323D; --accent: #86A2FF; --accent-soft: #1E2A4D; --good: #5CC48C; --good-soft: #15301F;
   --bad: #F07A70; --bad-soft: #3A1B19; --warn: #E2B05A; --warn-soft: #3A2C12;
-  --up: #4CB97C; --down: #E9675C; --e9: #E8A93A; --e20: #8C91FF; --vwap: #D27BE6;
+  --up: #4CB97C; --down: #E9675C; --e9: #4CC46A; --e20: #F0C93A; --vwap: #5AA2F0;
+  --c-up-body: #151A21; --c-up-line: #9AA3AE; --c-down: #F0554C; --c-vol-up: #5D6672; --c-vol-down: #E0473F;
+  --c-sess: #4FBF9F; --c-grid: #222932; --c-frame: #2A323D; --c-wm: rgba(231, 235, 240, 0.07); --c-last: #E7EBF0;
   --st0: #3A434F; --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 35%); color-scheme: dark; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -142,7 +148,16 @@ td.cell:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
          padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
 .s-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .s-head h3 { font-size: 20px; }
-.s-chart { flex: 1; min-height: 300px; position: relative; }
+.s-chart { flex: 1; min-height: 300px; position: relative; display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 1fr);
+           grid-template-rows: minmax(0, 1fr); gap: 14px; padding: 6px 10px 8px; }
+.s-chart > .empty { grid-column: 1 / -1; align-self: start; }
+.cp { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.cp-lab { font: 600 11.5px/1.6 var(--f-body); color: var(--ink); text-align: right; padding-right: 70px; }
+.cp-price { flex: 1 1 76%; position: relative; min-height: 0; border: 1px solid var(--c-frame); }
+.cp-vol { flex: 0 0 24%; position: relative; min-height: 70px; border: 1px solid var(--c-frame); margin-top: 4px; }
+.cp-vlab { position: absolute; left: 4px; top: 2px; z-index: 3; font: 10.5px var(--f-body); color: var(--ink-3); pointer-events: none; }
+.vline { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--c-sess); pointer-events: none; z-index: 2; }
+@media (max-width: 760px) { .s-chart { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); } }
 .s-foot { padding: 10px 16px; border-top: 1px solid var(--line); display: grid; gap: 6px; max-height: 32vh; overflow: auto; font-size: 13px; }
 .stg { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); }
 .stg i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
@@ -825,18 +840,72 @@ function showSegments(rows) {
 }
 
 /* --------------------------------------------------------------- chart */
-let chart = null;
-function closeSheet() { $("#sheet").hidden = true; if (chart) { chart.remove(); chart = null; } }
+let charts = [], chartObs = null;
+function closeSheet() { $("#sheet").hidden = true; charts.forEach(c => c.remove()); charts = []; if (chartObs) { chartObs.disconnect(); chartObs = null; } }
 $("#s-close").addEventListener("click", closeSheet);
 function decode(s) {
   const n = s.dc.length + 1, t = new Array(n), c = new Array(n);
   t[0] = s.t0; c[0] = s.c0; for (let i = 1; i < n; i++) { t[i] = t[i - 1] + s.dt[i - 1]; c[i] = c[i - 1] + s.dc[i - 1]; }
   const bars = [];
   for (let i = 0; i < n; i++) { const pc = i ? c[i - 1] : c[0]; bars.push({ m: t[i], o: (pc + s.do[i]) / 1e4, h: (c[i] + s.dh[i]) / 1e4, l: (c[i] - s.dl[i]) / 1e4, c: c[i] / 1e4, vw: (c[i] + s.dv[i]) / 1e4, v: s.v[i] }); }
-  const a9 = 2 / 10, a20 = 2 / 21; let e9 = s.e9_0 ?? bars[0].c, e20 = s.e20_0 ?? bars[0].c;
-  bars.forEach((b, i) => { if (i) { e9 = a9 * b.c + (1 - a9) * e9; e20 = a20 * b.c + (1 - a20) * e20; } b.e9 = e9; b.e20 = e20; });
+  emas(bars, s.e9_0, s.e20_0);
   const stage = []; for (const [v, k] of s.st) for (let j = 0; j < k; j++) stage.push(v);
   return { bars, stage };
+}
+function emas(bars, e9_0, e20_0) {
+  const a9 = 2 / 10, a20 = 2 / 21; let e9 = e9_0 ?? bars[0].c, e20 = e20_0 ?? bars[0].c;
+  bars.forEach((b, i) => { if (i) { e9 = a9 * b.c + (1 - a9) * e9; e20 = a20 * b.c + (1 - a20) * e20; } b.e9 = e9; b.e20 = e20; });
+}
+// k-minute bars from 1-minute bars. VWAP is the session VWAP at the bar's close; EMAs are on k-minute closes.
+function aggregate(bars, k) {
+  const out = []; let cur = null;
+  for (const b of bars) {
+    const g = Math.floor(b.m / k) * k;
+    if (!cur || cur.m !== g) { cur = { m: g, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v, vw: b.vw }; out.push(cur); }
+    else { cur.h = Math.max(cur.h, b.h); cur.l = Math.min(cur.l, b.l); cur.c = b.c; cur.v += b.v; cur.vw = b.vw; }
+  }
+  emas(out); return out;
+}
+const SESSION_LINES = [9 * 60 + 30, 16 * 60];   // regular-session open and close, ET
+const VIEW_FROM = 7 * 60;                        // default view starts 07:00 ET
+function chartPane(host, bars, T, o) {
+  const pbox = el("div", { class: "cp-price" }), vbox = el("div", { class: "cp-vol" }, el("span", { class: "cp-vlab", text: "Volume" }));
+  host.append(el("div", { class: "cp" }, el("div", { class: "cp-lab", text: o.label }), pbox, vbox));
+  const base = { autoSize: true, layout: { background: { type: "solid", color: css("--panel") }, textColor: css("--ink-2"), fontFamily: "IBM Plex Mono, monospace", fontSize: 11 },
+    grid: { vertLines: { visible: false }, horzLines: { color: css("--c-grid") } }, crosshair: { mode: 0 } };
+  const scale = { borderVisible: false, minimumWidth: 66 };
+  const price = LightweightCharts.createChart(pbox, { ...base, rightPriceScale: { ...scale, scaleMargins: { top: 0.06, bottom: 0.06 } }, timeScale: { visible: false, rightOffset: 2 },
+    watermark: { visible: true, text: `${o.ticker} -- ${o.label}`, color: css("--c-wm"), fontSize: o.wm, fontFamily: "Public Sans, sans-serif", fontStyle: "bold" } });
+  const vol = LightweightCharts.createChart(vbox, { ...base, rightPriceScale: { ...scale, scaleMargins: { top: 0.15, bottom: 0 } },
+    timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 2 } });
+  charts.push(price, vol);
+  const cs = price.addCandlestickSeries({ upColor: css("--c-up-body"), downColor: css("--c-down"), borderVisible: true, borderUpColor: css("--c-up-line"), borderDownColor: css("--c-down"),
+    wickUpColor: css("--c-up-line"), wickDownColor: css("--c-down"), priceLineVisible: false, lastValueVisible: false, priceFormat: o.priceFormat });
+  cs.setData(bars.map(b => ({ time: T(b.m), open: b.o, high: b.h, low: b.l, close: b.c })));
+  const line = (k, col, w) => price.addLineSeries({ color: col, lineWidth: w, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+    .setData(bars.map(b => ({ time: T(b.m), value: b[k] })));
+  line("vw", css("--vwap"), 2); line("e20", css("--e20"), 1); line("e9", css("--e9"), 1);
+  const last = bars[bars.length - 1];
+  cs.createPriceLine({ price: last.c, lineVisible: false, axisLabelVisible: true, title: "", color: css("--c-last"), axisLabelColor: css("--c-last"), axisLabelTextColor: css("--panel") });
+  vol.addHistogramSeries({ priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false })
+    .setData(bars.map(b => ({ time: T(b.m), value: b.v, color: b.c >= b.o ? css("--c-vol-up") : css("--c-vol-down") })));
+  // keep price and volume scrolled together
+  let lock = false;
+  const sync = (a, b) => a.timeScale().subscribeVisibleLogicalRangeChange(r => { if (!r || lock) return; lock = true; b.timeScale().setVisibleLogicalRange(r); lock = false; });
+  sync(price, vol); sync(vol, price);
+  // dashed lines at 09:30 and 16:00, drawn between the bars either side
+  const idx = SESSION_LINES.map(t => bars.findIndex(b => b.m >= t)).filter(i => i > 0);
+  let raf = 0;
+  const draw = () => { raf = 0; for (const [c, box] of [[price, pbox], [vol, vbox]]) {
+    box.querySelectorAll(".vline").forEach(n => n.remove());
+    const w = box.clientWidth - c.priceScale("right").width();
+    for (const i of idx) { const x = c.timeScale().logicalToCoordinate(i - 0.5); if (x != null && x >= 0 && x <= w) box.append(el("div", { class: "vline", style: `left:${x}px` })); } } };
+  const redraw = () => { if (!raf) raf = requestAnimationFrame(draw); };
+  price.timeScale().subscribeVisibleLogicalRangeChange(redraw);
+  chartObs.observe(pbox); chartObs.observe(vbox);
+  const i0 = Math.max(0, bars.findIndex(b => b.m >= VIEW_FROM));
+  price.timeScale().setVisibleLogicalRange({ from: i0 - 0.5, to: bars.length + 1 });
+  return { price, cs, redraw };
 }
 async function openChart(sid, date, mk) {
   const sheet = $("#sheet"); sheet.hidden = false;
@@ -846,38 +915,32 @@ async function openChart(sid, date, mk) {
   const s = day.sessions.find(x => x.sid === sid);
   if (!s) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Session not found." })); return; }
   const { bars, stage } = decode(s);
-  $("#s-title").textContent = `${s.ticker} · ${date}`;
-  $("#s-meta").textContent = `prior close ${F.px(s.pc)}${s.ssr_from != null ? ` · SSR from ${F.hm(s.ssr_from)}` : ""}${s.gaps.length ? ` · suspected halts ${s.gaps.map(F.hm).join(", ")}` : ""}`;
-  box.replaceChildren(); if (chart) chart.remove();
   const [y, mo, d] = date.split("-").map(Number), base = Date.UTC(y, mo - 1, d) / 1000, T = m => base + m * 60;
-  chart = LightweightCharts.createChart(box, { autoSize: true, layout: { background: { type: "solid", color: css("--panel") }, textColor: css("--ink-2"), fontFamily: "IBM Plex Mono, monospace" },
-    grid: { vertLines: { color: css("--line") }, horzLines: { color: css("--line") } }, rightPriceScale: { borderColor: css("--line") },
-    timeScale: { borderColor: css("--line"), timeVisible: true, secondsVisible: false }, crosshair: { mode: 0 } });
-  const prec = bars[0].c < 1 ? 4 : 2;
-  const cs = chart.addCandlestickSeries({ upColor: css("--up"), downColor: css("--down"), wickUpColor: css("--up"), wickDownColor: css("--down"), borderVisible: false,
-    priceFormat: { type: "price", precision: prec, minMove: prec === 4 ? 0.0001 : 0.01 } });
-  cs.setData(bars.map(b => ({ time: T(b.m), open: b.o, high: b.h, low: b.l, close: b.c })));
-  const line = (k, col) => { const l = chart.addLineSeries({ color: col, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-    l.setData(bars.map(b => ({ time: T(b.m), value: b[k] }))); };
-  line("e9", css("--e9")); line("e20", css("--e20")); line("vw", css("--vwap"));
-  const vol = chart.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false });
-  chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0.04 } });
-  vol.setData(bars.map(b => ({ time: T(b.m), value: b.v, color: b.c >= b.o ? css("--up") + "66" : css("--down") + "66" })));
-  const stg = chart.addHistogramSeries({ priceScaleId: "stg", priceLineVisible: false, lastValueVisible: false });
-  chart.priceScale("stg").applyOptions({ scaleMargins: { top: 0.975, bottom: 0 }, visible: false });
+  const long = new Date(base * 1000).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  $("#s-title").textContent = s.ticker;
+  $("#s-meta").textContent = `${long} · 07:00–20:00 ET · prior close ${F.px(s.pc)}${s.ssr_from != null ? ` · SSR from ${F.hm(s.ssr_from)}` : ""}${s.gaps.length ? ` · suspected halts ${s.gaps.map(F.hm).join(", ")}` : ""}`;
+  closeSheet(); sheet.hidden = false; box.replaceChildren();
+  const panes = [];
+  chartObs = new ResizeObserver(() => panes.forEach(p => p.redraw()));
+  const prec = bars[0].c < 1 ? 4 : 2, priceFormat = { type: "price", precision: prec, minMove: prec === 4 ? 0.0001 : 0.01 };
+  const p1 = chartPane(box, bars, T, { label: "1 Minute", ticker: s.ticker, wm: 30, priceFormat });
+  const p5 = chartPane(box, aggregate(bars, 5), T, { label: "5 Minute", ticker: s.ticker, wm: 16, priceFormat });
+  panes.push(p1, p5);
+  // live stage as a thin strip along the bottom of the 1-minute chart
+  const stg = p1.price.addHistogramSeries({ priceScaleId: "stg", priceLineVisible: false, lastValueVisible: false });
+  p1.price.priceScale("stg").applyOptions({ scaleMargins: { top: 0.975, bottom: 0 }, visible: false });
   stg.setData(bars.map((b, i) => ({ time: T(b.m), value: 1, color: css("--st" + (stage[i] ?? 0)) })));
   const marks = [];
   for (const [i, code] of s.ev || []) if (i < bars.length && (mk.sig == null || i !== mk.sig)) marks.push({ time: T(bars[i].m), position: "aboveBar", color: css("--ink-3"), shape: "circle", size: 0.4, text: "" });
   if (mk.sig != null && mk.sig < bars.length) marks.push({ time: T(bars[mk.sig].m), position: "aboveBar", color: css("--warn"), shape: "arrowDown", text: mk.sigCode ? sigName(mk.sigCode) : "signal" });
   if (mk.entry != null && mk.entry < bars.length) marks.push({ time: T(bars[mk.entry].m), position: "aboveBar", color: css("--bad"), shape: "arrowDown", text: "short " + F.px(mk.entryPx) });
   if (mk.exit != null && mk.exit < bars.length) marks.push({ time: T(bars[mk.exit].m), position: "belowBar", color: css("--good"), shape: "arrowUp", text: "cover " + F.px(mk.exitPx) });
-  marks.sort((a, b) => a.time - b.time); cs.setMarkers(marks);
+  marks.sort((a, b) => a.time - b.time); p1.cs.setMarkers(marks);
   const focus = mk.entry ?? mk.sig ?? (mk.seg ? mk.seg[0] : null);
-  if (focus != null) chart.timeScale().setVisibleRange({ from: T(bars[Math.max(0, focus - 60)].m), to: T(bars[Math.min(bars.length - 1, (mk.exit ?? focus) + 60)].m) });
-  else chart.timeScale().fitContent();
+  if (focus != null) p1.price.timeScale().setVisibleRange({ from: T(bars[Math.max(0, focus - 60)].m), to: T(bars[Math.min(bars.length - 1, (mk.exit ?? focus) + 60)].m) });
   const foot = $("#s-foot"); foot.replaceChildren(
     el("div", { class: "legend", style: "margin:0" }, Object.entries(META.stages).map(([k, v]) => el("span", { class: "stg" }, el("i", { style: `background:var(--st${k})` }), `${k} ${v.name}`))),
-    el("div", { class: "muted", text: `Signals in this session: ${(s.ev || []).length}. Gray dots mark them; the highlighted arrow is the one you clicked. The colored strip under the candles is the live stage.` }));
+    el("div", { class: "muted", text: `Signals in this session: ${(s.ev || []).length}. Gray dots on the 1-minute chart mark them; the highlighted arrow is the one you clicked. The colored strip under the 1-minute candles is the live stage. Dashed lines mark 09:30 and 16:00. Scroll left for 04:00–07:00.` }));
 }
 
 /* ----------------------------------------------------------------- boot */
