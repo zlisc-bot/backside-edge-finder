@@ -128,21 +128,35 @@ class Candidates:
 
 
 def walk_forward(cand: Candidates, min_train_weeks: int, min_train_n: int, top_k: int = 10) -> dict:
+    """Each week k is traded with the candidate ranked best on weeks 0..k-1.
+    Training totals are kept as running sums, so each fold costs O(candidates)."""
     nW = cand.S.shape[1]
+    N = len(cand)
+    St, Nt, S2, SN, N2 = (np.zeros(N) for _ in range(5))
     folds = []
-    for k in range(min_train_weeks, nW):
-        tr = np.arange(k)
-        mean, se, N, _ = cand.stats(tr)
-        score = np.where(N >= min_train_n, mean - 1.96 * se, -np.inf)
-        if not np.isfinite(score).any():
-            continue
-        order = np.argsort(-score)[:top_k]
-        best = order[0]
-        tS, tN = cand.S[:, k], cand.N[:, k]
-        lab = cand.label(best)
-        folds.append({"test_week": int(k), "pick": lab, "train_ev": float(mean[best]),
-                      "train_n": int(N[best]), "test_sum": float(tS[best]), "test_n": int(tN[best]),
-                      "top_sum": float(tS[order].sum()), "top_n": int(tN[order].sum())})
+    for k in range(nW):
+        if k >= min_train_weeks:
+            with np.errstate(invalid="ignore", divide="ignore"):
+                mean = St / Nt
+                var = np.maximum(S2 - 2 * mean * SN + mean ** 2 * N2, 0.0)
+                se = np.sqrt(var) / Nt
+            score = np.where(Nt >= min_train_n, mean - 1.96 * se, -np.inf)
+            if np.isfinite(score).any():
+                kk = min(top_k, N)
+                part = np.argpartition(-score, kk - 1)[:kk]
+                order = part[np.argsort(-score[part])]
+                best = order[0]
+                tS, tN = cand.S[:, k], cand.N[:, k]
+                folds.append({"test_week": int(k), "pick": cand.label(best), "train_ev": float(mean[best]),
+                              "train_n": int(Nt[best]), "test_sum": float(tS[best]), "test_n": int(tN[best]),
+                              "top_sum": float(tS[order].sum()), "top_n": int(tN[order].sum())})
+        sk = cand.S[:, k].astype(np.float64)
+        nk = cand.N[:, k].astype(np.float64)
+        St += sk
+        Nt += nk
+        S2 += sk * sk
+        SN += sk * nk
+        N2 += nk * nk
     if not folds:
         return {"folds": [], "oos_ev": math.nan, "oos_n": 0}
     s = sum(f["test_sum"] for f in folds)
