@@ -67,8 +67,9 @@ After the first successful publish, check whether a scheduled task named
 "Backside Edge Finder daily update" exists (list_triggers). If not, create one with
 create_trigger:
 - `create_new_session_on_fire`: true
-- `cron_expression`: `CRON_TZ=America/New_York 12 21 * * 1-5` (after the 20:00 ET extended
-  session; data is final by ~20:30)
+- `cron_expression`: `CRON_TZ=America/New_York 12 5 * * 2-6` (5:12 AM ET Tuesday-Saturday:
+  the previous session's end-of-day data is published by then, and the dashboard is fresh
+  before the open)
 - `initiation`: human_request
 - `prompt`: "Attach and clone the GitHub repository zlisc-bot/backside-edge-finder with push
   access, then follow 'The daily job' in its CLAUDE.md exactly. If credentials or network

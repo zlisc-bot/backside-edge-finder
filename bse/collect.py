@@ -127,9 +127,14 @@ def _merge_meta(store: Store, name: str, df: pd.DataFrame, key: list[str]):
     store.write_meta(name, both.drop_duplicates(key, keep="last"))
 
 
-def _update_block(cfg: Config, store: Store, provider: Provider, bdays: list[str], deadline: float | None) -> bool:
+def _update_block(cfg: Config, store: Store, provider: Provider, bdays: list[str], deadline: float | None,
+                  settled_before: str = "9999-12-31") -> bool:
     """Fetch everything one month needs. Returns True when every qualifying
-    session of the month was fetched (or confirmed to have no bars)."""
+    session of the month was fetched (or confirmed to have no bars).
+
+    settled_before: data for dates before this is final. An empty answer for a
+    later date may just mean the provider has not published it yet, so it is
+    not saved and the next run asks again."""
     pre = [cal.prev_trading_day(bdays[0], 2), cal.prev_trading_day(bdays[0], 1)]
     st = store.state()
     unavailable = set(st.get("unavailable_dates", []))
@@ -145,6 +150,9 @@ def _update_block(cfg: Config, store: Store, provider: Provider, bdays: list[str
                 continue
             part = daily[daily["date"] == d]
             if not len(part):
+                if d >= settled_before:
+                    log.warning("%s: no daily bars yet (not published?) - not saved; the next run retries", d)
+                    continue
                 log.warning("%s: provider returned no daily bars - treated as a non-trading day", d)
             store.write_daily(d, part)
         st = store.state()
@@ -232,7 +240,7 @@ def _update_block(cfg: Config, store: Store, provider: Provider, bdays: list[str
         # only now is "asked for it, got nothing" a real empty session
         st = store.state()
         empty = set(st.get("empty_sessions", []))
-        empty.update(f"{t}_{d}" for t, d in todo if (t, d) not in got)
+        empty.update(f"{t}_{d}" for t, d in todo if (t, d) not in got and d < settled_before)
         st["empty_sessions"] = sorted(empty)
         store.save_state(st)
     return finished
@@ -253,6 +261,8 @@ def update(cfg: Config | None = None, end: str | None = None, provider: Provider
     t0 = time.monotonic()
     deadline = t0 + max_minutes * 60 if max_minutes else None
     blocks = _month_blocks(days)
+    from datetime import date as _date, timedelta as _td
+    settled_before = (_date.fromisoformat(end) - _td(days=4)).isoformat()
     st = store.state()
     done = set(st.get("complete_months", []))
     current = end[:7]
@@ -265,7 +275,7 @@ def update(cfg: Config | None = None, end: str | None = None, provider: Provider
             pending = sum(1 for b in blocks[i:] if b[0][:7] not in done or b[0][:7] == current)
             log.info("time budget reached; %d month(s) left for the next run", pending)
             break
-        complete = _update_block(cfg, store, provider, bdays, deadline)
+        complete = _update_block(cfg, store, provider, bdays, deadline, settled_before)
         st = store.state()
         if complete and month != current:
             st["complete_months"] = sorted(set(st.get("complete_months", [])) | {month})
