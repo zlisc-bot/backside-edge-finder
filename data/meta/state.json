@@ -1,12 +1,14 @@
 {
  "complete_months": [
+  "2026-07",
   "2026-08",
   "2026-09",
   "2026-10"
  ],
  "empty_sessions": [],
  "provider": "polygon",
- "updated_at": "2026-11-05T00:12:20.471054-05:00",
+ "unavailable_dates": [],
+ "updated_at": "2026-11-05T01:02:45.916280-05:00",
  "window_end": "2026-11-03",
  "window_start": "2024-11-08"
 }
