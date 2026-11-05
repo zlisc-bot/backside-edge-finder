@@ -167,7 +167,16 @@ def walk_forward(cand: Candidates, min_train_weeks: int, min_train_n: int, top_k
     ts = sum(f["top_sum"] for f in folds)
     tn = sum(f["top_n"] for f in folds)
     wk = np.array([f["test_sum"] / f["test_n"] for f in folds if f["test_n"]])
-    return {"folds": folds, "oos_ev": s / n if n else math.nan, "oos_n": int(n),
+    # 95% range for the out-of-sample EV, resampling whole test weeks
+    sums = np.array([f["test_sum"] for f in folds if f["test_n"]])
+    cnts = np.array([f["test_n"] for f in folds if f["test_n"]], dtype=float)
+    lo = hi = math.nan
+    if len(sums) >= 5:
+        rng = np.random.default_rng(11)
+        draw = rng.integers(0, len(sums), size=(4000, len(sums)))
+        bs = sums[draw].sum(1) / np.maximum(cnts[draw].sum(1), 1)
+        lo, hi = (float(x) for x in np.percentile(bs, [2.5, 97.5]))
+    return {"folds": folds, "oos_ev": s / n if n else math.nan, "oos_n": int(n), "oos_lo": lo, "oos_hi": hi,
             "oos_ev_top": ts / tn if tn else math.nan, "oos_n_top": int(tn),
             "weeks_positive": float((wk > 0).mean()) if len(wk) else math.nan,
             "picks_distinct": len({(f["pick"]["sig"], f["pick"]["timing"], f["pick"]["stop"],

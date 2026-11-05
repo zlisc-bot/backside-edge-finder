@@ -207,7 +207,8 @@ def build(res: dict) -> dict:
     if len(cut):
         prim_cid = res["cut_cids"][0]
         fin = res["finalists"]
-        prim = fin[(fin["cid"] == prim_cid)].iloc[0]
+        prim = dict(fin[(fin["cid"] == prim_cid)].iloc[0])
+        prim["window"] = "09:30-16:00"            # the cutoff study tests entries across the whole day
         c_all = cut[(cut["cid"] == prim_cid) & (cut["period"] == "all") & (cut["mode"] == "stop new entries")]
         c_all = c_all[c_all["n"] >= 20]
         if len(c_all):
@@ -270,11 +271,21 @@ def build(res: dict) -> dict:
     parts, nums = [], []
     if wf.get("folds"):
         weekly = np.array([f["test_sum"] / f["test_n"] for f in wf["folds"] if f["test_n"]])
+        rng_txt = ""
+        if wf.get("oos_lo") == wf.get("oos_lo") and wf.get("oos_lo") is not None:
+            rng_txt = (f" (95% range {pct(wf['oos_lo'], 2, True)} to {pct(wf['oos_hi'], 2, True)}"
+                       + (", so zero is still possible" if wf["oos_lo"] <= 0 <= wf["oos_hi"] else "") + ")")
         parts.append(f"Walk-forward test: each week was traded with the configuration that ranked best on "
                      f"the earlier weeks only. Out of sample that procedure averaged {pct(wf['oos_ev'], 2, True)} "
-                     f"per trade after costs over {num(wf['oos_n'])} trades; {pct(wf['weeks_positive'], 0)} of the "
+                     f"per trade after costs over {num(wf['oos_n'])} trades{rng_txt}; {pct(wf['weeks_positive'], 0)} of the "
                      f"{len(weekly)} test weeks were positive. It switched between {wf['picks_distinct']} different "
                      f"configurations.")
+        from collections import Counter
+        common = Counter(f["pick"]["cid"] for f in wf["folds"]).most_common(1)
+        if common:
+            cid0, k0 = common[0]
+            pk = next(f["pick"] for f in wf["folds"] if f["pick"]["cid"] == cid0)
+            parts.append(f"Its most frequent pick ({k0} of {len(wf['folds'])} weeks) was {strat_label(pk)}.")
         nums.append(_n("Walk-forward EV per trade", wf["oos_ev"], "pct2", {"kind": "walkforward"}))
     wfg = res.get("wf_gross") or {}
     if wfg.get("folds"):
@@ -336,7 +347,9 @@ def build(res: dict) -> dict:
     parts.append(f"{num(res['cand_tested'])} configuration-and-time-window combinations were tested, so the best "
                  f"in-sample number is optimistic by construction; rely on the out-of-sample figures.")
     good = wf.get("oos_ev", float("nan"))
-    q3.update(status="supported" if (good == good and good > 0 and wf.get("weeks_positive", 0) >= 0.6) else "not supported",
+    lo_ok = wf.get("oos_lo") is not None and wf.get("oos_lo") == wf.get("oos_lo") and wf["oos_lo"] > 0
+    q3.update(status="supported" if (good == good and good > 0 and lo_ok) else
+              ("weak" if (good == good and good > 0) else "not supported"),
               answer=" ".join(parts), numbers=nums)
     out.insert(2, q3)
 

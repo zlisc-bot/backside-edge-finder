@@ -146,8 +146,14 @@ def run_study(cfg: Config, days: list[str], workers: int | None = None) -> dict:
         ref_best = pool[pool["why"].str.contains("reference")].sort_values("ev", ascending=False)["cid"].head(1)
         cut_cids += [c for c in ref_best if c not in cut_cids]
     if best_ref is not None and best_ref in set(normal["cid"]) if len(normal) else False:
-        # the signal that beats random timing, with the common reference exit, leads the cutoff study
         cut_cids = [best_ref] + [c for c in cut_cids if c != best_ref]
+    # The cutoff study leads with the setup the walk-forward chose most often: that is
+    # what a trader following the procedure would actually have been trading.
+    if wf.get("folds") and len(normal):
+        from collections import Counter
+        top_pick = Counter(f["pick"]["cid"] for f in wf["folds"]).most_common(1)[0][0]
+        if top_pick in set(normal["cid"]):
+            cut_cids = [top_pick] + [c for c in cut_cids if c != top_pick]
     flats = {k: v for k, v in trades.items() if k != "normal"}
     cuts, heat, marg = an.cutoff_tables(normal, flats, cut_cids, cfg, test_from) if cut_cids else (pd.DataFrame(),) * 3
 
