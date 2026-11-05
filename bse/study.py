@@ -77,10 +77,22 @@ def run_study(cfg: Config, days: list[str], workers: int | None = None) -> dict:
     log.info("walk-forward OOS EV %.4f over %d trades; PBO %.2f", wf.get("oos_ev", math.nan), wf.get("oos_n", 0), pb.get("pbo", math.nan))
 
     short = shortlist(grid, ct, cand, wf, split)
+    # are the leading setups isolated spikes? (their neighbours' in-sample EV)
+    nb_rows = []
+    for p in split.get("top", [])[:5]:
+        sel = np.flatnonzero((cand.cid == p["cid"]) & (cand.win == p["win_idx"]))
+        if len(sel):
+            nb_rows.append({"cid": p["cid"], "win_idx": p["win_idx"], **an.neighbors(cand, grid, int(sel[0]))})
     wanted: dict[tuple, list] = {}
     for cid in sorted(set(short["cid"])):
         d = grid.decode(int(cid))
         wanted.setdefault((d["si"], d["ti"]), []).append((d["sk"], d["gk"], d["hk"], int(cid)))
+    # the same walk-forward on returns BEFORE costs: is there a repeatable edge at all?
+    cand_g = Candidates(grid, sc.min_trades, value="wb_gross")
+    wf_gross = walk_forward(cand_g, cfg.val.wf_min_train_weeks, sc.min_trades_train)
+    del cand_g
+    log.info("walk-forward before costs: OOS EV %.4f over %d trades", wf_gross.get("oos_ev", math.nan),
+             wf_gross.get("oos_n", 0))
     cutoffs = [c for c in sc.cutoffs if c != "16:00"]
     t1 = time.time()
     trades = run_pass2(cfg, days, wanted, cutoffs, workers)
@@ -120,24 +132,35 @@ def run_study(cfg: Config, days: list[str], workers: int | None = None) -> dict:
     w_all = cand.W.index((0, grid.nB - 1))
     pool = fin[fin["win_idx"] == w_all].copy()
     pool = pool[pool["n"] >= sc.min_trades] if len(pool) else pool
+    evp = an.prep_events(ev)
+    sig = an.signal_tables(evp, cfg)
+    st_ = sig["signals"]
+    good = st_[(st_["group"] != "baseline") & (st_["n"] >= 100) & (st_["edge_lift_lo"] > 0)
+               & (st_.get("edge_q_pos", 0) <= 0.05)].sort_values("edge_lift", ascending=False)
+    best_ref = None
+    if len(good):
+        best_ref = _cid(grid, good.iloc[0]["sig"], "signal_close", *REFERENCE_EXIT)
     cut_cids = []
     if len(pool):
         cut_cids = list(pool.sort_values("train_ev", ascending=False)["cid"].head(4))
         ref_best = pool[pool["why"].str.contains("reference")].sort_values("ev", ascending=False)["cid"].head(1)
         cut_cids += [c for c in ref_best if c not in cut_cids]
+    if best_ref is not None and best_ref in set(normal["cid"]) if len(normal) else False:
+        # the signal that beats random timing, with the common reference exit, leads the cutoff study
+        cut_cids = [best_ref] + [c for c in cut_cids if c != best_ref]
     flats = {k: v for k, v in trades.items() if k != "normal"}
     cuts, heat, marg = an.cutoff_tables(normal, flats, cut_cids, cfg, test_from) if cut_cids else (pd.DataFrame(),) * 3
 
     # events ---------------------------------------------------------------------
-    evp = an.prep_events(ev)
-    sig = an.signal_tables(evp, cfg)
+    stab = an.stability(evp)
     ctx = an.context_tables(evp, sig["lift"])
     todp = an.tod_profile(evp)
     stage_tab, stage_tm = an.stage_tables(segs)
     marg_params = an.marginals(ct, grid)
     log.info("study finished in %.0fs", time.time() - t0)
     return {"cfg": cfg, "days": days, "grid": grid, "ct": ct, "cand_n": len(cand), "cand_tested": cand.n_tested,
-            "wf": wf, "split": split, "pbo": pb, "finalists": fin, "trades": normal, "flats": flats,
+            "wf": wf, "wf_gross": wf_gross, "split": split, "pbo": pb, "neighbors": pd.DataFrame(nb_rows),
+            "stability": stab, "finalists": fin, "trades": normal, "flats": flats,
             "cutoffs": cuts, "start_heat": heat, "marginal_tod": marg, "cut_cids": cut_cids,
             "events": evp, "signals": sig["signals"], "signal_tod": sig["signal_tod"],
             "signal_coarse": sig["signal_coarse"], "context": ctx, "tod_profile": todp,

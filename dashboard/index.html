@@ -346,6 +346,28 @@ async function renderSignals() {
   const T = objs(await load("signals.json"));
   const ctl = T.find(r => r.sig === "B00");
   const rows = T.filter(r => r.sig !== "B00").sort((a, b) => (b.edge_lift ?? -9) - (a.edge_lift ?? -9));
+  const cards = META.signal_cards || [];
+  if (cards.length) {
+    const VERD = { "beats random timing after the multiple-testing correction": ["good", "Beats random timing"],
+                   "is worse than random timing": ["bad", "Worse than random timing"],
+                   "is not distinguishable from random timing": ["warn", "No better than random"] };
+    const list = el("div", { class: "answers", style: "margin-top:0" });
+    const show = n => list.replaceChildren(...cards.slice(0, n).map(c => {
+      const [cls, t] = VERD[c.verdict] || ["", c.verdict];
+      return el("article", { class: "answer", style: "grid-template-columns:minmax(0,1fr);padding:14px 0" }, el("div", {},
+        el("div", { style: "display:flex;flex-wrap:wrap;gap:8px;align-items:center" }, el("span", { class: "chip " + cls, text: t }),
+          el("button", { class: "btn", style: "padding:2px 10px;font-size:12.5px", text: "See the sessions",
+                         onclick: () => openCohort(c.cohort, sigName(c.sig)) })),
+        el("p", { class: "text", style: "margin-top:6px", text: c.text })));
+    }));
+    const more = el("button", { class: "btn", style: "margin-top:10px", text: `Show all ${cards.length}` });
+    more.addEventListener("click", () => { show(cards.length); more.hidden = true; });
+    show(Math.min(5, cards.length));
+    more.hidden = cards.length <= 5;
+    pane.append(el("div", { class: "card" }, el("h3", { text: "Each signal in plain words" }),
+      el("p", { class: "note", text: "Written from the counts in the table below, best first. Each statement compares the signal with shorting at random moments at the same times of day." }),
+      list, more));
+  }
   const card = el("div", { class: "card" }, el("h3", { text: "Every signal, side by side" }),
     el("p", { class: "note", text: "Worked = fell 1 ATR before rising 1 ATR within 30 minutes; failed = the reverse. Edge = worked minus failed. Lift = edge minus the edge of random moments at the same times of day, with a 95% interval from resampling whole sessions. New low = price broke the low of the move. Click any number to see the sessions behind it." }));
   const cols = [["Signal", "text"], ["Type", "text"], ["n", "int"], ["Sessions", "int"], ["Worked", "pct"], ["Failed", "pct"], ["Edge", "pts"], ["Lift vs random", "pts"], ["95% interval", "text"],

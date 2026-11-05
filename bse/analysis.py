@@ -152,8 +152,13 @@ class Lift:
             lb = ob - eb
             olo, ohi = np.nanpercentile(ob, [2.5, 97.5])
             llo, lhi = np.nanpercentile(lb, [2.5, 97.5])
+            fin = lb[np.isfinite(lb)]
+            # one-sided bootstrap p-values for "lift > 0" and "lift < 0"
+            p_pos = (np.sum(fin <= 0) + 1) / (len(fin) + 1)
+            p_neg = (np.sum(fin >= 0) + 1) / (len(fin) + 1)
         return {"obs": float(obs), "obs_lo": float(olo), "obs_hi": float(ohi), "exp": float(exp),
-                "lift": float(obs - exp), "lo": float(llo), "hi": float(lhi)}
+                "lift": float(obs - exp), "lo": float(llo), "hi": float(lhi),
+                "p_pos": float(p_pos), "p_neg": float(p_neg)}
 
     def by_bucket(self, mask: np.ndarray, m: str) -> pd.DataFrame:
         cnt, sm = self._mat(mask, m)
@@ -168,6 +173,23 @@ class Lift:
                              "ctl": self.ctl_rate[m], "lift": obs - self.ctl_rate[m], "lo": lo, "hi": hi})
 
 
+def bh_qvalues(p: np.ndarray) -> np.ndarray:
+    """Benjamini-Hochberg adjusted p-values (false discovery rate)."""
+    p = np.asarray(p, float)
+    q = np.full(len(p), np.nan)
+    ok = np.isfinite(p)
+    m = int(ok.sum())
+    if not m:
+        return q
+    order = np.argsort(p[ok])
+    ranked = p[ok][order] * m / np.arange(1, m + 1)
+    ranked = np.minimum.accumulate(ranked[::-1])[::-1]
+    out = np.empty(m)
+    out[order] = np.minimum(ranked, 1.0)
+    q[ok] = out
+    return q
+
+
 def signal_tables(ev: pd.DataFrame, cfg: Config) -> dict:
     keys = ["edge", "nml_15", "mfe_30", "failed"]
     lift = Lift(ev, keys, cfg.val.bootstrap_reps // 2, cfg.val.seed)
@@ -179,9 +201,18 @@ def signal_tables(ev: pd.DataFrame, cfg: Config) -> dict:
         for m in keys:
             o = lift.overall(mask, m)
             r.update({f"{m}_lift": o["lift"], f"{m}_lift_lo": o["lo"], f"{m}_lift_hi": o["hi"],
-                      f"{m}_ctl": o["exp"], f"{m}_lo": o.get("obs_lo"), f"{m}_hi": o.get("obs_hi")})
+                      f"{m}_ctl": o["exp"], f"{m}_lo": o.get("obs_lo"), f"{m}_hi": o.get("obs_hi"),
+                      f"{m}_p_pos": o.get("p_pos", math.nan), f"{m}_p_neg": o.get("p_neg", math.nan)})
         rows.append(r)
-    stats = stats.merge(pd.DataFrame(rows), on="sig")
+    rows = pd.DataFrame(rows)
+    # Benjamini-Hochberg across the signals actually tested (the control is not a test)
+    tested = rows["sig"] != "B00"
+    for m in keys:
+        for side in ("pos", "neg"):
+            q = np.full(len(rows), np.nan)
+            q[tested.to_numpy()] = bh_qvalues(rows.loc[tested, f"{m}_p_{side}"].to_numpy())
+            rows[f"{m}_q_{side}"] = q
+    stats = stats.merge(rows, on="sig")
     # recurrence: minutes between consecutive same-type signals in a session
     e2 = ev[ev["sig"] != "B00"].sort_values(["sid", "sig", "mod"])
     gap = e2.groupby(["sid", "sig"])["mod"].diff()
@@ -303,7 +334,29 @@ def trade_summary(tr: pd.DataFrame, reps: int, seed: int) -> dict:
             "ssr_share": float(tr["ssr"].mean()), "halt_share": float(tr["halt_in_trade"].mean()),
             "ev_halt": float(tr.loc[tr["halt_in_trade"], "r"].mean()) if tr["halt_in_trade"].any() else math.nan,
             "sessions": int(tr["sid"].nunique()), "tickers": int(tr["ticker"].nunique()),
-            "hold_med": float((tr["exit_mod"] - tr["entry_mod"]).median())}
+            "hold_med": float((tr["exit_mod"] - tr["entry_mod"]).median()),
+            **_cost_breakdown(tr), **_live(tr)}
+
+
+def _live(tr: pd.DataFrame) -> dict:
+    """Trades a live screen could have found: already below $1 (or closed below
+    $1 the day before) and 1M+ shares traded by the entry minute."""
+    if "live_ok" not in tr or not len(tr):
+        return {}
+    lv = tr[tr["live_ok"]]
+    return {"live_share": float(tr["live_ok"].mean()), "live_n": int(len(lv)),
+            "ev_live": float(lv["r"].mean()) if len(lv) else math.nan}
+
+
+def _cost_breakdown(tr: pd.DataFrame) -> dict:
+    """Average per-trade cost, as a fraction of the entry price, split into parts."""
+    if "r_gross" not in tr or not len(tr):
+        return {}
+    total = (tr["r_gross"] - tr["r"]).mean()
+    comm = tr["c_comm"].mean() if "c_comm" in tr else math.nan
+    loc = tr["c_locate"].mean() if "c_locate" in tr else math.nan
+    return {"ev_gross": float(tr["r_gross"].mean()), "cost_total": float(total), "cost_comm": float(comm),
+            "cost_locate": float(loc), "cost_spread_slip": float(total - comm - loc)}
 
 
 def cutoff_tables(normal: pd.DataFrame, flats: dict[str, pd.DataFrame], cids: list[int], cfg: Config,
@@ -434,3 +487,66 @@ def pooled_by(ev: pd.DataFrame, col: str, metric: str, reps: int, seed: int) -> 
                      "value": float(s1.sum() / c1.sum()), "control": float(s2.sum() / c2.sum()),
                      "lift": float(s1.sum() / c1.sum() - s2.sum() / c2.sum()), "lo": float(lo), "hi": float(hi)})
     return pd.DataFrame(rows)
+
+
+
+def stability(ev: pd.DataFrame, min_n: int = 30) -> pd.DataFrame:
+    """Lift over random timing per calendar block (quarters when the window
+    spans 9+ months, otherwise months), time-matched like the main table.
+    Point estimates only: the question is whether the sign holds."""
+    e = ev[ev["edge"].notna()]
+    months = e["date"].str[:7]
+    span = months.nunique()
+    if span >= 9:
+        y, m = e["date"].str[:4], e["date"].str[5:7].astype(int)
+        block = y + "-Q" + ((m - 1) // 3 + 1).astype(str)
+    else:
+        block = months
+    e = e.assign(block=block.to_numpy())
+    ctl = e[e["sig"] == "B00"]
+    crate = ctl.groupby(["block", "tod15"])["edge"].mean()
+    rows = []
+    for (sig, blk), g in e[e["sig"] != "B00"].groupby(["sig", "block"]):
+        if len(g) < min_n:
+            continue
+        w = g.groupby("tod15").size()
+        cr = crate.reindex(pd.MultiIndex.from_product([[blk], w.index])).to_numpy()
+        ok = np.isfinite(cr)
+        if not ok.any():
+            continue
+        expect = float((w.to_numpy()[ok] * cr[ok]).sum() / w.to_numpy()[ok].sum())
+        rows.append({"sig": sig, "block": blk, "n": int(len(g)), "edge": float(g["edge"].mean()),
+                     "ctl": expect, "lift": float(g["edge"].mean() - expect)})
+    return pd.DataFrame(rows)
+
+
+def neighbors(cand, grid, idx: int) -> dict:
+    """Average full-sample EV of the setups next to candidate `idx`: same signal,
+    entry timing and time window, with the stop, the exit or the hold moved one
+    step within its own family (e.g. 2% -> 1% or 3% stop)."""
+    d = grid.decode(int(cand.cid[idx]))
+    win = int(cand.win[idx])
+    stops, targets, holds = grid.stops, grid.targets, list(grid.holds)
+
+    def steps(rules, k):
+        fam = [i for i, r in enumerate(rules) if r.kind == rules[k].kind]
+        j = fam.index(k)
+        return [fam[x] for x in (j - 1, j + 1) if 0 <= x < len(fam)]
+
+    alts = [(sk, d["gk"], d["hk"]) for sk in steps(stops, d["sk"])]
+    alts += [(d["sk"], gk, d["hk"]) for gk in steps(targets, d["gk"])]
+    alts += [(d["sk"], d["gk"], hk) for hk in (d["hk"] - 1, d["hk"] + 1) if 0 <= hk < len(holds)]
+    base = grid.cfg_id(d["si"], d["ti"], 0, 0, 0)          # one contiguous id block per (signal, timing)
+    sel = np.flatnonzero((cand.cid >= base) & (cand.cid < base + grid.block) & (cand.win == win))
+    key = {int(c): int(i) for c, i in zip(cand.cid[sel], sel)}
+    evs = []
+    for sk, gk, hk in alts:
+        j = key.get(grid.cfg_id(d["si"], d["ti"], sk, gk, hk))
+        if j is not None:
+            n = float(cand.N[j].sum(dtype=np.float64))
+            if n > 0:
+                evs.append(float(cand.S[j].sum(dtype=np.float64)) / n)
+    n0 = float(cand.N[idx].sum(dtype=np.float64))
+    own = float(cand.S[idx].sum(dtype=np.float64)) / n0 if n0 else math.nan
+    return {"own_ev": float(own), "neighbors": len(evs), "neighbor_ev": float(np.mean(evs)) if evs else math.nan,
+            "neighbor_pos": float(np.mean(np.array(evs) > 0)) if evs else math.nan}

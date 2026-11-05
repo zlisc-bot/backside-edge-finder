@@ -75,6 +75,16 @@ def spread_frac(s: SessionData, costs: Costs) -> np.ndarray:
     return np.clip(sp, 0.0, costs.spread_cap_bps / 1e4)
 
 
+def zero_costs(costs: Costs) -> Costs:
+    """Same execution rules (SSR resting orders, stop and target fills), no frictions."""
+    import copy
+    z = copy.deepcopy(costs)
+    z.spread_floor_ticks, z.spread_floor_bps, z.spread_mult = 0, 0.0, 0.0
+    z.slippage_bps, z.stop_slip_range_frac = 0.0, 0.0
+    z.commission_per_share, z.commission_min, z.locate_pct = 0.0, 0.0, 0.0
+    return z
+
+
 def commission_frac(price: np.ndarray, costs: Costs) -> np.ndarray:
     per_share = costs.commission_per_share / np.maximum(price, 1e-6)
     return np.minimum(np.maximum(per_share, costs.commission_min / costs.notional_usd), costs.commission_cap_pct)
@@ -414,13 +424,15 @@ class Grid:
                          "win": np.zeros((nc, self.nB), np.int64)} for k in ("low", "high")}
         self.cost_base = cfg.costs
         self.cost_scen = {k: cfg.costs_for(k) for k in ("low", "high")}
+        self.cost_gross = zero_costs(cfg.costs)
+        self.wb_gross = np.zeros((nc, self.nW, self.nB), f4)     # before any costs
 
     @staticmethod
     def estimate_bytes(cfg: Config, n_weeks: int) -> int:
         stops, targets, holds = build_rules(cfg)
         ncfg = len(TRADE_SIGNALS) * len(cfg.strat.entry_timings) * len(stops) * len(targets) * len(holds)
         nb = len(cfg.strat.tod_edges) - 1
-        return ncfg * n_weeks * (nb * (4 + 2 + 2) + 4)
+        return ncfg * n_weeks * (nb * (4 + 4 + 2 + 2) + 4)
 
     def cfg_id(self, si, ti, sk, gk, hk):
         return (((si * self.nT + ti) * self.nS + sk) * self.nG + gk) * self.nH + hk
@@ -470,9 +482,11 @@ class Grid:
                 self.reasons[sl, q] += (keep & (sim.reason == q)).sum(0).ravel()
             bk = tod_bucket(s.mod[ent.fill], self.cfg)
             rl = {k: net_returns(s, ent, sim, c) for k, c in self.cost_scen.items()}
+            rg = net_returns(s, ent, sim, self.cost_gross)
             for b in np.unique(bk):
                 mb = (bk == b)[:, None, None, None] & keep
                 self.wb_sum[sl, wi, b] += np.where(mb, r, 0).sum(0).ravel()
+                self.wb_gross[sl, wi, b] += np.where(mb, rg, 0).sum(0).ravel()
                 self.wb_n[sl, wi, b] += mb.sum(0).ravel().astype(np.uint16)
                 self.wb_win[sl, wi, b] += (mb & (r > 0)).sum(0).ravel().astype(np.uint16)
                 for k, rr in rl.items():
@@ -481,7 +495,7 @@ class Grid:
                     self.scen[k]["win"][sl, b] += (mb & (rr > 0)).sum(0).ravel()
 
     def merge(self, other: "Grid"):
-        for name in ("w_sq", "wb_sum", "wb_n", "wb_win", "pos", "neg",
+        for name in ("w_sq", "wb_sum", "wb_gross", "wb_n", "wb_win", "pos", "neg",
                      "rmult", "hold_min", "reasons"):
             getattr(self, name).__iadd__(getattr(other, name))
         for k in self.scen:
@@ -506,7 +520,8 @@ def trades_for(s: SessionData, perbar: dict, events: list[dict], cfg: Config,
         j_flat = min(j_flat, int(np.searchsorted(s.mod, flatten_at, side="right") - 1))
     if j_flat < 1:
         return out
-    scen = {"base": cfg.costs, "low": cfg.costs_for("low"), "high": cfg.costs_for("high")}
+    scen = {"base": cfg.costs, "low": cfg.costs_for("low"), "high": cfg.costs_for("high"),
+            "gross": zero_costs(cfg.costs)}
     for ent in build_entries(s, perbar, events, cfg):
         key = (ent.sig_i, ent.tim_i)
         if key not in wanted:
@@ -531,6 +546,13 @@ def trades_for(s: SessionData, perbar: dict, events: list[dict], cfg: Config,
                     "reason": int(sim.reason[k, sk, gk, hk]),
                     "r": float(rs["base"][k, sk, gk, hk]), "r_low": float(rs["low"][k, sk, gk, hk]),
                     "r_high": float(rs["high"][k, sk, gk, hk]),
+                    "r_gross": float(rs["gross"][k, sk, gk, hk]),
+                    # where the base-case costs went, as fractions of the entry price
+                    "c_comm": float(commission_frac(np.array([ent.price[k]]), cfg.costs)[0]
+                                    + commission_frac(np.array([sim.p_exit[k, sk, gk, hk]]), cfg.costs)[0]
+                                    * sim.p_exit[k, sk, gk, hk] / ent.price[k]),
+                    "c_locate": float(cfg.costs.locate_pct),
+                    "live_ok": bool(s.arr["known_sub1"][ent.fill[k]] and s.arr["cumvol"][ent.fill[k]] >= 1_000_000),
                     "risk": float(sim.risk[k, sk]), "ssr": bool(ent.ssr[k]), "passive": bool(ent.passive[k]),
                     "halt_in_trade": bool(s.arr["after_gap"][ent.fill[k] + 1:j + 1].any()),
                 })

@@ -171,7 +171,8 @@ def build_site(res: dict, data_source: str, out_dir: Path | None = None) -> Path
         "costs": {k: getattr(cfg.costs, k) for k in cfg.costs.__dataclass_fields__},
         "cost_scenarios": {k: v for k, v in __import__("bse.config", fromlist=["COST_SCENARIOS"]).COST_SCENARIOS.items()},
         "config": cfg.to_dict(),
-        "findings": fnd["findings"], "kpis": fnd["kpis"], "slice_labels": slice_labels,
+        "findings": fnd["findings"], "kpis": fnd["kpis"], "signal_cards": fnd.get("cards", []),
+        "slice_labels": slice_labels,
     }
     _write(data / "summary.json", meta)
 

@@ -54,3 +54,10 @@ def test_event_slices_tolerate_missing_gain():
     e, labels = _event_slices(ev)
     assert "n/a" in labels["c_gain"]
     assert e["c_gain"].dtype.kind == "i"
+
+
+def test_benjamini_hochberg_matches_hand_calculation():
+    import numpy as np
+    from bse.analysis import bh_qvalues
+    q = bh_qvalues(np.array([0.01, 0.04, 0.03, 0.20, np.nan]))
+    assert np.allclose(q[:4], [0.04, 0.16 / 3, 0.16 / 3, 0.20]) and np.isnan(q[4])

@@ -86,6 +86,16 @@ Edit `config.local.json` to use your broker's real costs, for example:
 {"costs": {"commission_per_share": 0.0035, "commission_cap_pct": 0.01, "locate_pct": 0.005}}
 ```
 
+**Before and after costs.** Every setup is also scored with zero costs, including its own walk-forward
+test, and each short-listed trade records where its costs went (spread and slippage, commission,
+locate). This separates "no edge" from "an edge that costs erase".
+
+**Guarding against luck.** Signal lifts get a Benjamini-Hochberg false-discovery-rate correction for
+testing 21 signals at once. The top signals are re-checked month by month (quarter by quarter once the
+window spans 9+ months). The leading setups are compared with their neighbouring settings, since an
+isolated peak is a sign of overfitting. Their trades are also re-scored using only stocks a live
+screen could have flagged by the entry minute.
+
 **Out-of-sample checks** (`bse/validation.py`): weekly walk-forward (each week traded with the setup
 chosen from earlier weeks only), a 60/40 chronological split, and the CSCV probability of backtest
 overfitting. Cutoff tests compare stopping new entries at 10:30, 11:00, 11:30, 12:00 and 13:00, or

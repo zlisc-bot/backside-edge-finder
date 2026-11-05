@@ -79,8 +79,11 @@ def _decode_cols(grid: Grid, cids: np.ndarray) -> pd.DataFrame:
 class Candidates:
     """(config x time window) candidates with per-week sums for fast re-use."""
 
-    def __init__(self, grid: Grid, min_total: int):
+    def __init__(self, grid: Grid, min_total: int, value: str = "wb_sum"):
+        """value: which per-week sums to rank on ("wb_sum" net of costs,
+        "wb_gross" before costs)."""
         self.grid = grid
+        src = getattr(grid, value)
         self.W = windows(grid)
         a_all = np.array([a for a, _ in self.W])
         b_all = np.array([b for _, b in self.W])
@@ -98,7 +101,7 @@ class Candidates:
         for lo in range(0, len(self.cid), 50_000):
             sl = slice(lo, lo + 50_000)
             c = self.cid[sl]
-            cs_s = np.cumsum(grid.wb_sum[c].astype(np.float64), axis=2)
+            cs_s = np.cumsum(src[c].astype(np.float64), axis=2)
             cs_n = np.cumsum(grid.wb_n[c].astype(np.float64), axis=2)
             z = np.zeros(cs_s.shape[:2] + (1,))
             cs_s = np.concatenate([z, cs_s], axis=2)

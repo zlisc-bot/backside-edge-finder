@@ -94,7 +94,9 @@ def build(res: dict) -> dict:
         q1.update(status="insufficient", answer="Not enough signals yet (each needs at least "
                                                 f"{MIN_N} occurrences).", numbers=[])
     else:
-        rel = S[S["edge_lift_lo"] > 0]
+        fdr = "edge_q_pos" in S
+        rel = S[(S["edge_lift_lo"] > 0) & ((S["edge_q_pos"] <= 0.05) if fdr else True)]
+        weak = S[(S["edge_lift_lo"] > 0) & ~S["sig"].isin(rel["sig"])]
         if len(rel):
             e = rel.sort_values(["hod_age_med", "pullback_med"]).iloc[0]
             b = rel.sort_values("edge_lift", ascending=False).iloc[0]
@@ -104,6 +106,9 @@ def build(res: dict) -> dict:
                    f"and did the opposite in {pct(e['p_failed'])}. That is {pp(e['edge_lift'])} better than "
                    f"shorting at random moments at the same times of day "
                    f"(95% interval {pp(e['edge_lift_lo'])} to {pp(e['edge_lift_hi'])}).")
+            if fdr:
+                txt += (f" {len(rel)} of {len(S)} signals beat random timing after correcting for testing "
+                        f"{len(S)} signals at once (5% false discovery rate).")
             if b["sig"] != e["sig"]:
                 txt += (f" The strongest signal overall was {b['name']} ({pp(b['edge_lift'])} vs random), "
                         f"which comes later: median {mins(b['hod_age_med'])} after the high, "
@@ -151,7 +156,38 @@ def build(res: dict) -> dict:
     q2 = {"id": "q2", "question": "When does backside scalping work best, and when should new entries stop?"}
     nums = []
     parts = []
+    # Time of day for the signals that actually beat random timing; pooling every
+    # signal would let the many breakdown signals that lose to chance swamp them.
+    good, cg = [], pd.DataFrame()
+    if len(S) and "edge_q_pos" in S:
+        good = S[(S["edge_lift_lo"] > 0) & (S["edge_q_pos"] <= 0.05)].sort_values("edge_lift", ascending=False)["sig"].tolist()
+    if good:
+        cg = an.pooled_by(ev[ev["sig"].isin(good + ["B00"])], "coarse", "edge", reps, seed)
+        if len(cg):
+            names = ", ".join(SIGNALS[g][0] for g in good[:3])
+            b, w = cg.sort_values("lift", ascending=False).iloc[0], cg.sort_values("lift").iloc[0]
+            parts.append(f"For the signals that beat random timing ({names}), the edge was largest "
+                         f"{PHRASE.get(b['slice'], b['slice'])} ({pp(b['lift'])}, interval {pp(b['lo'])} to "
+                         f"{pp(b['hi'])}, {num(b['n'])} signals) and smallest {PHRASE.get(w['slice'], w['slice'])} "
+                         f"({pp(w['lift'])}, interval {pp(w['lo'])} to {pp(w['hi'])}).")
+            if b["slice"] == "Pre-market":
+                rth = cg[cg["slice"] != "Pre-market"].sort_values("lift", ascending=False)
+                if len(rth):
+                    r1 = rth.iloc[0]
+                    parts.append(f"Many brokers restrict pre-market shorting; in regular hours it was best "
+                                 f"{PHRASE.get(r1['slice'], r1['slice'])} ({pp(r1['lift'])}, interval {pp(r1['lo'])} "
+                                 f"to {pp(r1['hi'])}).")
+            for r in cg.itertuples():
+                nums.append(_n(f"Best signals, {r.slice}", r.lift, "pts",
+                               {"kind": "events", "sig": good[0], "where": {"coarse": r.slice}}))
     co = an.pooled_by(ev, "coarse", "edge", reps, seed)
+    if len(co) and good:
+        allneg = bool((co["hi"] < 0).all())
+        parts.append("Pooled across all signals" + (", every time window did worse than random timing, because "
+                     "most breakdown signals fire right before a bounce." if allneg else
+                     f", the picture is weaker: largest {PHRASE.get(co.sort_values('lift').iloc[-1]['slice'], '')} "
+                     f"({pp(co['lift'].max())})."))
+        co = co.iloc[0:0]
     if len(co):
         order = [c[0] for c in an.COARSE]
         co["o"] = co["slice"].map({k: i for i, k in enumerate(order)})
@@ -183,10 +219,20 @@ def build(res: dict) -> dict:
             te_best = c_te.sort_values("total", ascending=False)["cutoff"].iloc[0] if len(c_te) else None
             hp = heat[(heat["cid"] == prim_cid) & (heat["n"] >= 20)]
             start_best = hp.sort_values("total", ascending=False).iloc[0] if len(hp) else None
-            parts.append(f"For the leading strategy ({strat_label(prim)}), stopping new entries at "
-                         f"{by_total['cutoff']} gave the most total profit: {pct(by_total['ev'], 2, True)} per trade, "
+            verb = "gave the most total profit" if by_total["total"] > 0 else "lost the least"
+            parts.append(f"For {strat_label(prim)}, stopping new entries at "
+                         f"{by_total['cutoff']} {verb}: {pct(by_total['ev'], 2, True)} per trade after costs, "
                          f"{pct(by_total['win'])} winners, {pct(by_total['pos_days'])} of days positive, "
                          f"{num(by_total['n'])} trades.")
+            q2["all_negative"] = bool((c_all["ev"] < 0).all())
+            if q2["all_negative"]:
+                parts.append("It lost money at every cutoff after costs, so here the cutoff only decides how "
+                             "much is lost; it is not a reason to trade.")
+            if "ev_gross" in c_all:
+                g_best = c_all.sort_values("ev_gross", ascending=False).iloc[0]
+                q2["gross_cutoff"], q2["gross_cutoff_ev"] = g_best["cutoff"], float(g_best["ev_gross"])
+                parts.append(f"Before costs, the best cutoff for it was {g_best['cutoff']} "
+                             f"({pct(g_best['ev_gross'], 2, True)} per trade).")
             if by_sharpe["cutoff"] != by_total["cutoff"]:
                 parts.append(f"The steadiest day-to-day results came from stopping at {by_sharpe['cutoff']} "
                              f"(daily mean/stdev {by_sharpe['day_sharpe']:.2f}).")
@@ -210,7 +256,7 @@ def build(res: dict) -> dict:
             q2["cutoff"] = by_total["cutoff"]
             q2["start"] = start_best["start"] if start_best is not None else None
             q2["cid"] = int(prim_cid)
-    ok = len(co) and (co["lo"] > 0).any()
+    ok = (len(co) and (co["lo"] > 0).any()) or (good and len(cg) and (cg["lo"] > 0).any())
     q2.update(status="supported" if ok else ("weak" if parts else "insufficient"),
               answer=" ".join(parts) if parts else "Not enough data yet.", numbers=nums)
     q2["answer"] += (" A historical cutoff describes the average past trade; your own fills, size and "
@@ -230,6 +276,30 @@ def build(res: dict) -> dict:
                      f"{len(weekly)} test weeks were positive. It switched between {wf['picks_distinct']} different "
                      f"configurations.")
         nums.append(_n("Walk-forward EV per trade", wf["oos_ev"], "pct2", {"kind": "walkforward"}))
+    wfg = res.get("wf_gross") or {}
+    if wfg.get("folds"):
+        wkg = np.array([f["test_sum"] / f["test_n"] for f in wfg["folds"] if f["test_n"]])
+        gpos = float((wkg > 0).mean()) if len(wkg) else math.nan
+        parts.append(f"Before costs, the same procedure averaged {pct(wfg['oos_ev'], 2, True)} per trade "
+                     f"({num(wfg['oos_n'])} trades, {pct(gpos, 0)} of test weeks positive).")
+        nums.append(_n("Walk-forward EV before costs", wfg["oos_ev"], "pct2", {"kind": "walkforward"}))
+        fin = res["finalists"]
+        if len(fin) and "cost_total" in fin:
+            ct_ = fin[fin["n"] >= 30]
+            if len(ct_):
+                c = ct_[["cost_total", "cost_spread_slip", "cost_comm", "cost_locate"]].median()
+                parts.append(f"A typical short-listed trade paid {pct(c['cost_total'], 2)} in costs: "
+                             f"{pct(c['cost_spread_slip'], 2)} spread and slippage, {pct(c['cost_comm'], 2)} "
+                             f"commission and {pct(c['cost_locate'], 2)} locate.")
+        good_g = wfg.get("oos_ev", math.nan)
+        good_n = wf.get("oos_ev", math.nan)
+        if good_g == good_g and good_g > 0 and gpos >= 0.6 and not (good_n == good_n and good_n > 0):
+            parts.append("So there is a repeatable edge before costs, and the costs erase it. Cheaper "
+                         "execution (per-share commission, locate, resting orders instead of market orders) "
+                         "decides whether it pays.")
+        elif good_g == good_g and good_g <= 0:
+            parts.append("Even before costs, the best past setup did not carry forward. The limit is the "
+                         "signal, not the costs.")
     top = split.get("top") or []
     if top:
         t0 = top[0]
@@ -240,6 +310,24 @@ def build(res: dict) -> dict:
         parts.append(f"{len(pos)} of the top {len(top)} training-period configurations stayed positive out of sample.")
         nums.append(_n("Top config, out-of-sample EV", t0["test_ev"], "pct2",
                        {"kind": "trades", "cid": int(t0["cid"]), "window": t0["window"], "from": res["test_from"]}))
+    nbr = res.get("neighbors")
+    if top and nbr is not None and len(nbr):
+        r0 = nbr[(nbr["cid"] == top[0]["cid"]) & (nbr["win_idx"] == top[0]["win_idx"])]
+        if len(r0) and r0.iloc[0]["neighbors"] > 0:
+            r0 = r0.iloc[0]
+            spike = (r0["own_ev"] > 0) and (r0["neighbor_ev"] < r0["own_ev"] / 2)
+            parts.append(f"Its {int(r0['neighbors'])} neighbouring settings (one step tighter or looser stop, exit or "
+                         f"hold) averaged {pct(r0['neighbor_ev'], 2, True)} per trade against its own "
+                         f"{pct(r0['own_ev'], 2, True)}" + (", so it is an isolated peak, the usual sign of overfitting."
+                                                           if spike else "."))
+    fin_ = res["finalists"]
+    if top and len(fin_) and "ev_live" in fin_:
+        f0 = fin_[(fin_["cid"] == top[0]["cid"]) & (fin_["win_idx"] == top[0]["win_idx"])]
+        if len(f0) and f0.iloc[0].get("live_n", 0):
+            f0 = f0.iloc[0]
+            parts.append(f"Limited to trades a live screen could have caught (already under $1 with 1M+ shares by the "
+                         f"entry minute, {pct(f0['live_share'], 0)} of its trades), it averaged "
+                         f"{pct(f0['ev_live'], 2, True)} over the whole period.")
     pb = res["pbo"]
     if pb.get("splits"):
         parts.append(f"Probability that the in-sample winner is below median out of sample (CSCV): "
@@ -255,7 +343,54 @@ def build(res: dict) -> dict:
     # --------------------------------------------------- section 20 details
     out += _section20(res, S, ctl, reps, seed)
     kpis = _kpis(res, S, ctl, q2)
-    return {"findings": out, "kpis": kpis}
+    return {"findings": out, "kpis": kpis, "cards": signal_cards(res, S)}
+
+
+WINDOW_TEXT = {"Pre-market": "in the pre-market", "Before 10:00": "between 9:30 and 10:00 AM",
+               "10:00-11:00": "between 10:00 and 11:00 AM", "11:00-12:00": "between 11:00 AM and noon",
+               "Afternoon": "after noon"}
+
+
+def signal_cards(res: dict, S: pd.DataFrame) -> list[dict]:
+    """One statement per signal, in the form the user asked for, from real counts.
+    "Most effective" is the time window with the largest edge over random
+    moments in that same window (30+ signals), and says how sure that is."""
+    co = res.get("signal_coarse")
+    cards = []
+    if co is None or not len(S):
+        return cards
+    ctl_w = co[co["sig"] == "B00"].set_index("coarse")["edge"] if (co["sig"] == "B00").any() else pd.Series(dtype=float)
+    for r in S.sort_values("edge_lift", ascending=False).to_dict("records"):
+        w = co[(co["sig"] == r["sig"]) & (co["n"] >= 30)].copy()
+        best = None
+        if len(w) and len(ctl_w):
+            w["lift"] = w["edge"] - w["coarse"].map(ctl_w)
+            w = w.dropna(subset=["lift"])
+            if len(w):
+                best = w.sort_values("lift", ascending=False).iloc[0]
+        txt = (f"{r['name']}: price made a new low of the move within 15 minutes in {pct(r['p_nml_15'])} of "
+               f"{num(r['n'])} cases (random moments at the same times of day: {pct(r.get('nml_15_ctl'))}). "
+               f"Median drop over the next 30 minutes {pct(r['mfe_30_med'])}, median rise {pct(r['mae_30_med'])}. "
+               f"It fell 1 ATR before rising 1 ATR {pct(r['p_worked'])} of the time and did the reverse "
+               f"{pct(r['p_failed'])} ({pp(r['edge_lift'])} vs random timing).")
+        if best is not None:
+            if best["lift"] > 0:
+                txt += (f" It was most effective {WINDOW_TEXT.get(best['coarse'], best['coarse'])}: "
+                        f"{pp(best['lift'])} vs random moments in that window, {num(best['n'])} signals.")
+                if best["n"] < 200:
+                    txt += " That window has few signals, so treat it as a hint."
+            else:
+                txt += (f" Even its best window ({WINDOW_TEXT.get(best['coarse'], best['coarse'])}) trailed random "
+                        f"moments ({pp(best['lift'])}).")
+        q = r.get("edge_q_pos")
+        verdict = ("beats random timing after the multiple-testing correction" if q == q and q is not None and q <= 0.05
+                   and r["edge_lift_lo"] > 0 else
+                   "is worse than random timing" if r["edge_lift_hi"] < 0 else
+                   "is not distinguishable from random timing")
+        cards.append({"sig": r["sig"], "text": txt, "verdict": verdict, "lift": r["edge_lift"],
+                      "cohort": {"kind": "events", "sig": r["sig"]},
+                      "window": best["coarse"] if best is not None else None})
+    return cards
 
 
 def _n(label, value, fmt, cohort):
@@ -321,6 +456,23 @@ def _section20(res, S, ctl, reps, seed):
                     "numbers": [_n(ra["name"], ra["edge_lift"], "pts", {"kind": "events", "sig": a}),
                                 _n(rb["name"], rb["edge_lift"], "pts", {"kind": "events", "sig": b})]})
 
+    stab = res.get("stability")
+    if stab is not None and len(stab) and len(S):
+        lines, nums = [], []
+        for r in S.sort_values("edge_lift", ascending=False).head(3).to_dict("records"):
+            g = stab[stab["sig"] == r["sig"]]
+            if len(g) >= 2:
+                k = int((g["lift"] > 0).sum())
+                lines.append(f"{r['name']} beat random timing in {k} of {len(g)} periods "
+                             f"(range {pp(g['lift'].min())} to {pp(g['lift'].max())})")
+                nums.append(_n(f"{r['name']}: periods ahead of random", k, "int", {"kind": "events", "sig": r["sig"]}))
+        if lines:
+            unit = "quarter" if stab["block"].str.contains("Q").any() else "month"
+            out.append({"id": "stability", "question": f"Do the best signals hold up {unit} after {unit}?",
+                        "status": "descriptive",
+                        "answer": "; ".join(lines) + f". Each {unit} is compared with random moments at the same "
+                                  f"times of day in that {unit}. A signal that only worked in one stretch is fragile.",
+                        "numbers": nums})
     pair("S01", "S08", "Is the first 9 EMA breakdown or the first failed 9 EMA reclaim the better short?")
     pair("S02", "S09", "Is the first 20 EMA breakdown or the first failed 20 EMA reclaim the better short?")
     pair("S03", "S10", "Is the first VWAP loss or the first failed VWAP reclaim the better short?")
@@ -398,15 +550,30 @@ def _kpis(res, S, ctl, q2):
                   "sub": f"max drop within 30 min (median {pct(d['mfe_30_med'])}) · random timing "
                          f"{pct(ctl['mfe_30_mean']) if ctl is not None else 'n/a'}",
                   "cohort": {"kind": "events", "sig": d["sig"]}})
-    if q2.get("start"):
+    if q2.get("all_negative"):
+        g = q2.get("gross_cutoff")
+        if g and not (q2.get("gross_cutoff_ev", -1) > 0):
+            g = None                                   # not profitable even before costs
         k.append({"id": "begin", "title": "Best time to begin scalping", "value": None, "fmt": "text",
-                  "text": q2["start"], "sub": "start of the best start/stop pair for the leading strategy",
-                  "cohort": {"kind": "trades", "cid": q2["cid"], "after": hm(q2["start"])}})
-    if q2.get("cutoff"):
+                  "text": "None after costs",
+                  "sub": "the leading setup lost money at every start and stop time once costs were charged",
+                  "cohort": {"kind": "trades", "cid": q2["cid"]}})
         k.append({"id": "stop", "title": "Best time to stop new scalps", "value": None, "fmt": "text",
-                  "text": "Trade all day" if q2["cutoff"] == "16:00" else q2["cutoff"],
-                  "sub": "cutoff with the most total profit for the leading strategy",
-                  "cohort": {"kind": "trades", "cid": q2["cid"], "before": hm(q2["cutoff"])}})
+                  "text": ("Before costs: " + ("all day" if g == "16:00" else g)) if g else "None after costs",
+                  "sub": (f"before costs its best cutoff averaged {pct(q2.get('gross_cutoff_ev'), 2, True)} per "
+                          f"trade; after costs no cutoff made money") if g else
+                         "the leading setup lost money at every cutoff, before and after costs",
+                  "cohort": {"kind": "trades", "cid": q2["cid"], "before": hm(g) if g and g != "16:00" else 9999}})
+    else:
+        if q2.get("start"):
+            k.append({"id": "begin", "title": "Best time to begin scalping", "value": None, "fmt": "text",
+                      "text": q2["start"], "sub": "start of the best start/stop pair for the leading strategy",
+                      "cohort": {"kind": "trades", "cid": q2["cid"], "after": hm(q2["start"])}})
+        if q2.get("cutoff"):
+            k.append({"id": "stop", "title": "Best time to stop new scalps", "value": None, "fmt": "text",
+                      "text": "Trade all day" if q2["cutoff"] == "16:00" else q2["cutoff"],
+                      "sub": "cutoff with the most total profit for the leading strategy",
+                      "cohort": {"kind": "trades", "cid": q2["cid"], "before": hm(q2["cutoff"])}})
     top = res["split"].get("top") or []
     if top:
         t0 = top[0]
