@@ -1,5 +1,6 @@
 {
  "complete_months": [
+  "2025-04",
   "2025-05",
   "2025-06",
   "2025-07",
@@ -22,7 +23,7 @@
  "empty_sessions": [],
  "provider": "polygon",
  "unavailable_dates": [],
- "updated_at": "2026-11-05T12:47:38.202169-05:00",
+ "updated_at": "2026-11-05T13:35:09.555266-05:00",
  "window_end": "2026-11-03",
  "window_start": "2024-11-08"
 }
