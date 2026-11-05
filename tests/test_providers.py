@@ -122,3 +122,13 @@ def test_rate_limiter_backs_off_gently():
         rl.slow_down()
     assert rl.per_min == 3.0                                # floor
     assert RateLimiter(5).slow_down(retry_after=90) == 90   # honours Retry-After
+
+
+def test_api_key_is_redacted_from_logs(caplog):
+    import logging
+    from bse.providers.base import log, redact
+    key = "SECRETKEY123abc"
+    assert key not in redact(f"Max retries exceeded with url: /v2/aggs?adjusted=false&apiKey={key} (Caused by X)")
+    with caplog.at_level(logging.WARNING, logger="bse.provider"):
+        log.warning("GET %s failed (%s)", "/v2/aggs", Exception(f"url: /x?apiKey={key}&a=1"))
+    assert key not in caplog.text and "apiKey=***" in caplog.text

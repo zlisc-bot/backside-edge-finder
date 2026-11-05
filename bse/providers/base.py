@@ -11,6 +11,7 @@ All prices are returned UNADJUSTED.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 
@@ -18,6 +19,26 @@ import pandas as pd
 import requests
 
 log = logging.getLogger("bse.provider")
+
+# Query-string credentials (Polygon/Massive pass apiKey in the URL). Exception
+# text from requests repeats the full URL, so scrub it before it reaches a log.
+_SECRET_RE = re.compile(r"((?:api_?key|apikey|token|secret)=)[^&\s'\")]+", re.I)
+
+
+def redact(text) -> str:
+    return _SECRET_RE.sub(r"\1***", str(text))
+
+
+class _RedactFilter(logging.Filter):
+    def filter(self, record):
+        if record.args:
+            record.args = tuple(redact(a) if isinstance(a, (str, Exception)) else a for a in record.args)
+        if isinstance(record.msg, str):
+            record.msg = redact(record.msg)
+        return True
+
+
+log.addFilter(_RedactFilter())
 
 BAR_COLS = ["ticker", "ts", "o", "h", "l", "c", "v", "vw", "n"]
 DAILY_COLS = ["date", "ticker", "o", "h", "l", "c", "v", "vw", "n"]
@@ -83,7 +104,7 @@ class HttpClient:
             try:
                 r = self.session.get(url, params=params, timeout=self.timeout)
             except requests.RequestException as e:  # network blip
-                log.warning("GET %s failed (%s); retry %d", url.split("?")[0], e, attempt)
+                log.warning("GET %s failed (%s); retry %d", url.split("?")[0], redact(e), attempt)
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
                 continue
