@@ -2,7 +2,8 @@
 
 Env:
   POLYGON_API_KEY (or MASSIVE_API_KEY)   required
-  POLYGON_BASE_URL                       default https://api.polygon.io
+  POLYGON_BASE_URL                       default: https://api.massive.com, falling back to
+                                         https://api.polygon.io if Massive is unreachable
   POLYGON_RATE_PER_MIN                   default 0 (unlimited, slows down on 429).
                                          The free plan allows 5/min.
 
@@ -20,10 +21,12 @@ from collections import defaultdict
 from datetime import date as Date
 
 import pandas as pd
+import requests
 
 from .base import BAR_COLS, DAILY_COLS, HttpClient, Provider, ProviderError, RateLimiter
 
 log = logging.getLogger("bse.polygon")
+BASES = ("https://api.massive.com", "https://api.polygon.io")
 
 
 class PolygonProvider(Provider):
@@ -34,12 +37,26 @@ class PolygonProvider(Provider):
         self.key = api_key or os.environ.get("POLYGON_API_KEY") or os.environ.get("MASSIVE_API_KEY")
         if not self.key:
             raise ProviderError("POLYGON_API_KEY is not set")
-        self.base = (base_url or os.environ.get("POLYGON_BASE_URL") or "https://api.polygon.io").rstrip("/")
+        explicit = base_url or os.environ.get("POLYGON_BASE_URL")
+        self.base = explicit.rstrip("/") if explicit else self._pick_base()
         rate = rate_per_min if rate_per_min is not None else float(os.environ.get("POLYGON_RATE_PER_MIN", "0"))
         self.http = HttpClient(RateLimiter(rate))
         self.include_otc = include_otc
 
     # ------------------------------------------------------------------ utils
+    def _pick_base(self) -> str:
+        """Massive's host first, the original Polygon host second. Any HTTP answer
+        (even 401) means the host is reachable; a refused connection means the
+        environment's network policy blocks it."""
+        for b in BASES:
+            try:
+                requests.get(f"{b}/v1/marketstatus/now", params={"apiKey": self.key}, timeout=20)
+                return b
+            except requests.RequestException as e:
+                log.warning("%s is not reachable (%s)", b, e.__class__.__name__)
+        raise ProviderError("Neither api.massive.com nor api.polygon.io is reachable. Add them under "
+                            "Allowed domains in the environment's network settings.")
+
     def _get(self, path_or_url: str, params: dict | None = None) -> dict:
         url = path_or_url if path_or_url.startswith("http") else self.base + path_or_url
         p = dict(params or {})
