@@ -28,7 +28,12 @@ class ProviderError(RuntimeError):
 
 
 class AuthError(ProviderError):
-    pass
+    """401: the key itself was rejected. Fatal."""
+
+
+class PlanLimitError(AuthError):
+    """403: the key works but the plan does not cover this request (e.g. data
+    older than the plan's history). Skip the item and carry on."""
 
 
 @dataclass
@@ -84,8 +89,10 @@ class HttpClient:
                 continue
             if r.status_code == 200:
                 return r.json()
-            if r.status_code in (401, 403):
-                raise AuthError(f"{r.status_code} from {url.split('?')[0]}: {r.text[:300]}")
+            if r.status_code == 401:
+                raise AuthError(f"401 from {url.split('?')[0]}: {r.text[:300]}")
+            if r.status_code == 403:
+                raise PlanLimitError(f"403 from {url.split('?')[0]}: {r.text[:300]}")
             if r.status_code == 429:
                 ra = r.headers.get("Retry-After", "")
                 try:

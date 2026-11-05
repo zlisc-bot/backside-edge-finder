@@ -48,9 +48,11 @@ class Universe:
     # Polygon ticker types kept (common stock, ADR common, ordinary shares).
     # Warrants, rights, units, preferreds, ETFs and funds are excluded.
     ticker_types: tuple = ("CS", "ADRC", "OS")
-    # Rolling analysis window. Raw data is never deleted; the analysis uses the
-    # most recent `window_months` calendar months (Aug 4 -> Nov 4 for Nov 4).
-    window_months: int = 3
+    # Rolling window for collection and analysis: the most recent 24 calendar
+    # months, clipped to what the data plan serves (Massive's free plan: 2 years).
+    # Raw data is never deleted.
+    window_months: int = 24
+    max_history_days: int = 725      # 0 = no plan limit (paid plans)
     # Prices are UNADJUSTED. A stock that later reverse-split traded below $1 at
     # the time; split-adjusted prices would hide it (selection bias).
     adjusted: bool = False
@@ -97,7 +99,7 @@ class Outcomes:
     first_passage_pct: float = 0.02          # same test in fixed percent
     first_passage_horizon_min: int = 30
     tod_bucket_min: int = 15
-    baseline_every_n_bars: int = 5           # control sample: every 5th bar after a high
+    baseline_every_n_bars: int = 10          # control sample: every 10th bar after a high
 
 
 @dataclass
@@ -159,11 +161,19 @@ COST_SCENARIOS = {
 @dataclass
 class Validation:
     train_frac: float = 0.6                  # chronological split
-    wf_min_train_weeks: int = 5
+    wf_min_train_weeks: int = 8
     wf_test_weeks: int = 1
     bootstrap_reps: int = 1000
     cscv_blocks: int = 10
     seed: int = 7
+
+
+@dataclass
+class Report:
+    # Lists of individual signals/trades and the session charts cover the most
+    # recent `drill_days` trading days (artifact size limits). Statistics always
+    # use the whole window.
+    drill_days: int = 126
 
 
 @dataclass
@@ -175,6 +185,7 @@ class Config:
     strat: Strategy = field(default_factory=Strategy)
     costs: Costs = field(default_factory=Costs)
     val: Validation = field(default_factory=Validation)
+    report: Report = field(default_factory=Report)
 
     def to_dict(self) -> dict:
         return asdict(self)

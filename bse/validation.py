@@ -37,33 +37,36 @@ def window_label(grid: Grid, w: tuple[int, int]) -> str:
 
 
 def config_table(grid: Grid) -> pd.DataFrame:
-    """Whole-sample statistics for every configuration (all RTH entries)."""
-    n = grid.d_n.sum(1).astype(float)
-    S = grid.d_sum.sum(1).astype(float)
+    """Whole-sample statistics for every configuration (all regular-hours
+    entries). Standard errors are clustered by week."""
+    w_sum = grid.wb_sum.sum(2, dtype=np.float64)          # (ncfg, weeks)
+    w_n = grid.wb_n.sum(2, dtype=np.float64)
+    n = w_n.sum(1)
+    S = w_sum.sum(1)
     with np.errstate(invalid="ignore", divide="ignore"):
         mean = S / n
-        sq = grid.d_sq.sum(1).astype(float)
+        sq = grid.w_sq.sum(1, dtype=np.float64)
         var = (sq - n * mean ** 2) / np.maximum(n - 1, 1)
-        wins = grid.d_win.sum(1).astype(float)
-        resid = grid.d_sum.astype(float) - grid.d_n.astype(float) * mean[:, None]
-        se_day = np.sqrt((resid ** 2).sum(1)) / n
-        active = grid.d_n > 0
-        n_days = active.sum(1)
-        pos_days = ((grid.d_sum > 0) & active).sum(1)
-        day_pnl = np.where(active, grid.d_sum, np.nan)
-        dmean = np.nanmean(day_pnl, axis=1)
-        dstd = np.nanstd(day_pnl, axis=1, ddof=1)
+        wins = grid.wb_win.sum((1, 2), dtype=np.float64)
+        resid = w_sum - w_n * mean[:, None]
+        se_w = np.sqrt((resid ** 2).sum(1)) / n
+        active = w_n > 0
+        n_weeks = active.sum(1)
+        pos_weeks = ((w_sum > 0) & active).sum(1)
+        wk = np.where(active, w_sum, np.nan)
+        wmean = np.nanmean(wk, axis=1)
+        wstd = np.nanstd(wk, axis=1, ddof=1)
         lo = {k: grid.scen[k]["sum"].sum(1) / grid.scen[k]["n"].sum(1) for k in grid.scen}
         df = pd.DataFrame({
             "cid": np.arange(grid.ncfg), "n": n, "ev": mean, "sd": np.sqrt(np.maximum(var, 0)),
-            "se": se_day, "lcb": mean - 1.96 * se_day, "win": wins / n,
+            "se": se_w, "lcb": mean - 1.96 * se_w, "win": wins / n,
             "pf": grid.pos / np.abs(np.minimum(grid.neg, -1e-12)),
             "avg_win": grid.pos / np.maximum(wins, 1), "avg_loss": grid.neg / np.maximum(n - wins, 1),
             "ev_r": grid.rmult / n, "hold_avg": grid.hold_min / n,
             "stop_share": grid.reasons[:, 0] / n, "target_share": grid.reasons[:, 1] / n,
             "trail_share": grid.reasons[:, 2] / n, "time_share": grid.reasons[:, 3] / n,
-            "days": n_days, "pos_days": pos_days / np.maximum(n_days, 1),
-            "day_sharpe": dmean / dstd, "ev_low": lo["low"], "ev_high": lo["high"],
+            "weeks": n_weeks, "pos_weeks": pos_weeks / np.maximum(n_weeks, 1),
+            "week_sharpe": wmean / wstd, "ev_low": lo["low"], "ev_high": lo["high"],
         })
     return df
 
@@ -79,20 +82,30 @@ class Candidates:
     def __init__(self, grid: Grid, min_total: int):
         self.grid = grid
         self.W = windows(grid)
-        cs_s = np.cumsum(grid.wb_sum.astype(float), axis=2)
-        cs_n = np.cumsum(grid.wb_n.astype(float), axis=2)
-        cs_w = np.cumsum(grid.wb_win.astype(float), axis=2)
-        pad = lambda x: np.concatenate([np.zeros(x.shape[:2] + (1,)), x], axis=2)
-        cs_s, cs_n, cs_w = pad(cs_s), pad(cs_n), pad(cs_w)
-        tot_n = np.stack([cs_n[:, :, b + 1] - cs_n[:, :, a] for a, b in self.W], axis=1).sum(2)
-        keep = tot_n >= min_total                         # (ncfg, nWin)
+        a_all = np.array([a for a, _ in self.W])
+        b_all = np.array([b for _, b in self.W])
+        tot_b = grid.wb_n.sum(1, dtype=np.float64)                       # (ncfg, buckets)
+        cs_tot = np.concatenate([np.zeros((grid.ncfg, 1)), np.cumsum(tot_b, axis=1)], axis=1)
+        tot_n = cs_tot[:, b_all + 1] - cs_tot[:, a_all]                  # (ncfg, windows)
+        keep = tot_n >= min_total
         self.cid, self.win = np.nonzero(keep)
-        a = np.array([self.W[w][0] for w in self.win])
-        b = np.array([self.W[w][1] for w in self.win])
-        self.S = (cs_s[self.cid, :, b + 1] - cs_s[self.cid, :, a]).astype(np.float32)   # (N, weeks)
-        self.N = (cs_n[self.cid, :, b + 1] - cs_n[self.cid, :, a]).astype(np.float32)
-        self.Wn = (cs_w[self.cid, :, b + 1] - cs_w[self.cid, :, a]).astype(np.float32)
         self.n_tested = int(keep.size)
+        a, b = a_all[self.win], b_all[self.win]
+        nW = grid.nW
+        self.S = np.zeros((len(self.cid), nW), np.float32)               # (N, weeks)
+        self.N = np.zeros((len(self.cid), nW), np.float32)
+        # fill in chunks of configurations to bound the temporaries
+        for lo in range(0, len(self.cid), 50_000):
+            sl = slice(lo, lo + 50_000)
+            c = self.cid[sl]
+            cs_s = np.cumsum(grid.wb_sum[c].astype(np.float64), axis=2)
+            cs_n = np.cumsum(grid.wb_n[c].astype(np.float64), axis=2)
+            z = np.zeros(cs_s.shape[:2] + (1,))
+            cs_s = np.concatenate([z, cs_s], axis=2)
+            cs_n = np.concatenate([z, cs_n], axis=2)
+            r = np.arange(len(c))
+            self.S[sl] = cs_s[r, :, b[sl] + 1] - cs_s[r, :, a[sl]]
+            self.N[sl] = cs_n[r, :, b[sl] + 1] - cs_n[r, :, a[sl]]
 
     def __len__(self):
         return len(self.cid)

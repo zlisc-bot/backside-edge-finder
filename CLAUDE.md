@@ -1,8 +1,9 @@
 # Operating notes for Claude sessions
 
-This repository is the user's Backside Scalping Edge Finder: a rolling 3-month database of
-sub-$1, 5M+ share sessions, a research engine, and a dashboard artifact named
-"Backside Scalping Edge Finder". README.md explains the method.
+This repository is the user's Backside Scalping Edge Finder: a rolling 2-year database of
+sub-$1, 5M+ share sessions (clipped to the 2 years Massive's free plan serves), a research
+engine, and a dashboard artifact named "Backside Scalping Edge Finder". README.md explains
+the method.
 
 ## Hard rules
 
@@ -29,11 +30,18 @@ environment.network).
 
 ## The daily job (also what the scheduled task runs)
 
-1. `python -m bse update`. This is resumable and only fetches what is missing. On Polygon's free
-   plan (5 requests/min), the first backfill takes hours. Run it with
-   `nohup python -m bse update > update.log 2>&1 &`, poll `tail update.log` and
-   `python -m bse status`, and rerun after an interruption.
-2. `python -m bse analyze`, about 5-15 minutes. It writes report/site and derived/study.pkl.
+1. `python -m bse update --max-minutes 120 --git-checkpoint`. It fetches the newest missing day
+   first, then keeps filling older months (newest first) until the time budget runs out, and
+   commits + pushes data/ after every month. It is resumable. `python -m bse status` shows
+   progress (`months_complete`, `backfill_pending_months`). On the free plan the full 2-year
+   backfill takes a day or two of fetching. The daily job fills it in 2 hours at a time,
+   and a dedicated long run can use
+   `nohup python -m bse update --git-checkpoint > update.log 2>&1 &` with no time budget.
+   Publish as soon as the most recent ~3 months are in, then again as history fills in.
+2. `python -m bse analyze`: about 10 minutes for 3 months, up to about an hour for the full 2
+   years. It analyses only days whose minute bars have arrived, and writes report/site and
+   derived/study.pkl. Statistics use the whole window. Example lists and charts cover the most
+   recent 126 trading days (artifact size limits).
 3. `python -m pytest -q tests`
 4. `python scripts/publish_plan.py > plan.json`. Exit code 3 means synthetic: stop.
 5. Publish with the Artifact tool, following plan.json:

@@ -399,10 +399,8 @@ class Grid:
         self.nB = len(cfg.strat.tod_edges) - 1
         nc, nd = self.ncfg, len(days)
         f4 = np.float32
-        self.d_sum = np.zeros((nc, nd), f4)
-        self.d_n = np.zeros((nc, nd), np.int32)
-        self.d_win = np.zeros((nc, nd), np.int32)
-        self.d_sq = np.zeros((nc, nd), f4)
+        # per-WEEK sums of squares (per-day arrays would not fit for a 2-year window)
+        self.w_sq = np.zeros((nc, self.nW), f4)
         self.wb_sum = np.zeros((nc, self.nW, self.nB), f4)
         self.wb_n = np.zeros((nc, self.nW, self.nB), np.int32)
         self.wb_win = np.zeros((nc, self.nW, self.nB), np.int32)
@@ -453,10 +451,7 @@ class Grid:
             base = self.cfg_id(ent.sig_i, ent.tim_i, 0, 0, 0)
             sl = slice(base, base + self.block)
             rk = np.where(keep, r, 0.0)
-            self.d_sum[sl, di] += rk.sum(0).ravel()
-            self.d_n[sl, di] += keep.sum(0).ravel()
-            self.d_win[sl, di] += (keep & (r > 0)).sum(0).ravel()
-            self.d_sq[sl, di] += (rk * rk).sum(0).ravel()
+            self.w_sq[sl, wi] += (rk * rk).sum(0).ravel()
             self.pos[sl] += np.where(rk > 0, rk, 0).sum(0).ravel()
             self.neg[sl] += np.where(rk < 0, rk, 0).sum(0).ravel()
             rm = r / np.maximum(sim.risk[:, :, None, None], 1e-3)
@@ -478,7 +473,7 @@ class Grid:
                     self.scen[k]["win"][sl, b] += (mb & (rr > 0)).sum(0).ravel()
 
     def merge(self, other: "Grid"):
-        for name in ("d_sum", "d_n", "d_win", "d_sq", "wb_sum", "wb_n", "wb_win", "pos", "neg",
+        for name in ("w_sq", "wb_sum", "wb_n", "wb_win", "pos", "neg",
                      "rmult", "hold_min", "reasons"):
             getattr(self, name).__iadd__(getattr(other, name))
         for k in self.scen:

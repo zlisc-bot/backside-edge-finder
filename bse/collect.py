@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections import defaultdict
 
 import pandas as pd
@@ -43,10 +44,20 @@ def get_provider(cfg: Config) -> Provider:
         "provider's API host in the environment's network settings.")
 
 
+def window_start(cfg: Config, end: str) -> str:
+    """First calendar date of the rolling window ending at `end`, clipped to
+    the history the data plan serves."""
+    start = cal.months_back(end, cfg.universe.window_months)
+    lim = cfg.universe.max_history_days
+    if lim:
+        from datetime import date, timedelta
+        start = max(start, (date.fromisoformat(end) - timedelta(days=lim)).isoformat())
+    return start
+
+
 def window_dates(cfg: Config, end: str | None = None) -> tuple[list[str], str, str]:
     end = end or cal.last_complete_session()
-    start = cal.months_back(end, cfg.universe.window_months)
-    days = cal.trading_days(start, end)
+    days = cal.trading_days(window_start(cfg, end), end)
     return days, days[0], days[-1]
 
 
@@ -101,75 +112,90 @@ def build_sessions(store: Store, cfg: Config, days: list[str]) -> pd.DataFrame:
     return ses.sort_values(["date", "ticker"]).reset_index(drop=True)
 
 
-def update(cfg: Config | None = None, end: str | None = None, provider: Provider | None = None,
-           store: Store | None = None) -> pd.DataFrame:
-    cfg = cfg or load_config()
-    store = store or Store()
-    provider = provider or get_provider(cfg)
-    days, start, end = window_dates(cfg, end)
-    pre = [cal.prev_trading_day(start, 2), cal.prev_trading_day(start, 1)]
-    log.info("window %s .. %s (%d trading days), provider=%s", start, end, len(days), provider.name)
+def _month_blocks(days: list[str]) -> list[list[str]]:
+    """Trading days grouped by calendar month, NEWEST month first, so a long
+    backfill delivers the most recent data first."""
+    by = defaultdict(list)
+    for d in days:
+        by[d[:7]].append(d)
+    return [by[k] for k in sorted(by, reverse=True)]
 
-    # 1. daily bars ------------------------------------------------------------
-    missing = [d for d in pre + days if not store.has_daily(d)]
-    if missing:
-        log.info("fetching daily bars for %d dates", len(missing))
-        daily = provider.daily_bars(missing)
-        for d in missing:
+
+def _merge_meta(store: Store, name: str, df: pd.DataFrame, key: list[str]):
+    old = store.read_meta(name)
+    both = pd.concat([old, df], ignore_index=True) if len(old) else df
+    store.write_meta(name, both.drop_duplicates(key, keep="last"))
+
+
+def _update_block(cfg: Config, store: Store, provider: Provider, bdays: list[str], deadline: float | None) -> bool:
+    """Fetch everything one month needs. Returns True when every qualifying
+    session of the month was fetched (or confirmed to have no bars)."""
+    pre = [cal.prev_trading_day(bdays[0], 2), cal.prev_trading_day(bdays[0], 1)]
+    st = store.state()
+    unavailable = set(st.get("unavailable_dates", []))
+
+    # 1. daily bars (the screen) -------------------------------------------------
+    need = [d for d in pre + bdays if not store.has_daily(d) and d not in unavailable]
+    if need:
+        log.info("%s: daily bars for %d dates", bdays[0][:7], len(need))
+        daily = provider.daily_bars(need)
+        for d in need:
+            if d in getattr(provider, "unavailable", set()):
+                unavailable.add(d)
+                continue
             part = daily[daily["date"] == d]
             if not len(part):
                 log.warning("%s: provider returned no daily bars - treated as a non-trading day", d)
             store.write_daily(d, part)
+        st = store.state()
+        st["unavailable_dates"] = sorted(unavailable)
+        store.save_state(st)
 
-    # splits (refetch each run: cheap, and late-announced splits get picked up)
+    # splits for this month (cheap; late-announced splits get picked up on the next pass)
     try:
-        store.write_meta("splits", provider.splits(pre[0], end))
+        sp = provider.splits(pre[0], bdays[-1])
+        if len(sp):
+            _merge_meta(store, "splits", sp, ["ticker", "execution_date"])
     except ProviderError as e:
         log.warning("split lookup failed: %s", e)
 
-    # 2. screen -----------------------------------------------------------------
-    ses = build_sessions(store, cfg, days)
+    # 2. screen + 3. security types for tickers not seen before ------------------------
+    ses = build_sessions(store, cfg, bdays)
     if not len(ses):
-        log.warning("no qualifying sessions found")
-        return ses
-
-    # 3. security types for new tickers ------------------------------------------
+        log.info("%s: no qualifying sessions", bdays[0][:7])
+        return True
     types = store.read_meta("types")
     known = set(types["ticker"]) if len(types) else set()
     new = sorted(set(ses["ticker"]) - known)
     if new:
-        log.info("classifying %d new tickers", len(new))
-        t_new = provider.security_types(new, [end, start])
-        types = pd.concat([types, t_new], ignore_index=True) if len(types) else t_new
-        store.write_meta("types", types.drop_duplicates("ticker", keep="last"))
-        ses = build_sessions(store, cfg, days)
-
-    store.write_meta("sessions", ses)
+        bulk = len(new) > 40           # bulk lists cost ~13 calls; one-by-one costs 1 call each
+        log.info("%s: classifying %d new tickers (%s)", bdays[0][:7], len(new), "bulk" if bulk else "one by one")
+        t_new = provider.security_types(new, [bdays[len(bdays) // 2]], bulk=bulk)
+        _merge_meta(store, "types", t_new, ["ticker"])
+        ses = build_sessions(store, cfg, bdays)
     keep = ses[ses["eligible_type"]]
-    log.info("%d qualifying sessions (%d after removing non-stock securities), %d tickers",
-             len(ses), len(keep), keep["ticker"].nunique())
+    log.info("%s: %d qualifying sessions (%d after removing non-stock securities), %d tickers",
+             bdays[0][:7], len(ses), len(keep), keep["ticker"].nunique())
 
-    # 4. minute bars ----------------------------------------------------------------
-    st = store.state()
+    # 4. minute bars ----------------------------------------------------------------------
     empty = set(st.get("empty_sessions", []))
-    todo = []
-    have: dict[str, set] = {}
+    todo, have = [], {}
     for r in keep.itertuples():
         if r.date not in have:
             have[r.date] = store.minute_tickers(r.date)
         if r.ticker not in have[r.date] and r.session_id not in empty:
             todo.append((r.ticker, r.date))
+    if not todo:
+        return True
     prev_day = {d: cal.prev_trading_day(d) for d in set(keep["date"])}
-    log.info("%d sessions need minute bars", len(todo))
-
+    log.info("%s: %d sessions need minute bars", bdays[0][:7], len(todo))
     qual = set(zip(keep["ticker"], keep["date"]))
-    wanted = defaultdict(set)  # ticker -> dates to store (session dates + their prior days)
+    wanted = defaultdict(set)
     for t, d in todo:
         wanted[t].update({d, prev_day[d]})
     buf: dict[tuple, list[pd.DataFrame]] = defaultdict(list)
-    got = set()
-    n_resp = 0
-    warm_have: dict[str, set] = {}
+    got, warm_have = set(), {}
+    n_resp, finished = 0, True
 
     def flush():
         for (d, kind), frames in buf.items():
@@ -177,36 +203,86 @@ def update(cfg: Config | None = None, end: str | None = None, provider: Provider
         buf.clear()
 
     for df in provider.minute_bars(todo, prev_day):
-        if not len(df):
-            continue
-        dt = pd.to_datetime(df["ts"], unit="ms", utc=True).dt.tz_convert(TZ)
-        df = df.assign(date=dt.dt.strftime("%Y-%m-%d"))
-        t = df["ticker"].iloc[0]
-        for d, part in df.groupby("date"):
-            if d not in wanted.get(t, ()):
-                continue
-            if (t, d) in qual:
-                buf[(d, "minute")].append(part.drop(columns=["date"]))
-                got.add((t, d))
-            else:
-                if d not in warm_have:
-                    warm_have[d] = store.minute_tickers(d, "warm")
-                if t not in warm_have[d]:
-                    buf[(d, "warm")].append(part.drop(columns=["date"]))
-                    warm_have[d].add(t)
+        if len(df):
+            dt = pd.to_datetime(df["ts"], unit="ms", utc=True).dt.tz_convert(TZ)
+            df = df.assign(date=dt.dt.strftime("%Y-%m-%d"))
+            t = df["ticker"].iloc[0]
+            for d, part in df.groupby("date"):
+                if d not in wanted.get(t, ()):
+                    continue
+                if (t, d) in qual:
+                    buf[(d, "minute")].append(part.drop(columns=["date"]))
+                    got.add((t, d))
+                else:
+                    if d not in warm_have:
+                        warm_have[d] = store.minute_tickers(d, "warm")
+                    if t not in warm_have[d]:
+                        buf[(d, "warm")].append(part.drop(columns=["date"]))
+                        warm_have[d].add(t)
         n_resp += 1
         if n_resp % 25 == 0:
             flush()
-            log.info("minute bars: %d responses stored", n_resp)
+            log.info("%s: minute bars, %d responses stored", bdays[0][:7], n_resp)
+        if deadline and time.monotonic() > deadline:
+            log.info("time budget reached inside %s; it resumes on the next run", bdays[0][:7])
+            finished = False
+            break
     flush()
+    if finished:
+        # only now is "asked for it, got nothing" a real empty session
+        st = store.state()
+        empty = set(st.get("empty_sessions", []))
+        empty.update(f"{t}_{d}" for t, d in todo if (t, d) not in got)
+        st["empty_sessions"] = sorted(empty)
+        store.save_state(st)
+    return finished
 
-    for t, d in todo:
-        if (t, d) not in got:
-            empty.add(f"{t}_{d}")
-    st["empty_sessions"] = sorted(empty)
+
+def update(cfg: Config | None = None, end: str | None = None, provider: Provider | None = None,
+           store: Store | None = None, max_minutes: float | None = None, on_block=None) -> pd.DataFrame:
+    """Bring the database up to date, newest month first.
+
+    max_minutes: stop after this much time (between months, or inside one);
+                 the next run resumes. on_block(month_days): called after each
+                 month, e.g. to commit and push a checkpoint."""
+    cfg = cfg or load_config()
+    store = store or Store()
+    provider = provider or get_provider(cfg)
+    days, start, end = window_dates(cfg, end)
+    log.info("window %s .. %s (%d trading days), provider=%s", start, end, len(days), provider.name)
+    t0 = time.monotonic()
+    deadline = t0 + max_minutes * 60 if max_minutes else None
+    blocks = _month_blocks(days)
+    st = store.state()
+    done = set(st.get("complete_months", []))
+    current = end[:7]
+    pending = 0
+    for i, bdays in enumerate(blocks):
+        month = bdays[0][:7]
+        if month in done and month != current:
+            continue
+        if deadline and time.monotonic() > deadline:
+            pending = sum(1 for b in blocks[i:] if b[0][:7] not in done or b[0][:7] == current)
+            log.info("time budget reached; %d month(s) left for the next run", pending)
+            break
+        complete = _update_block(cfg, store, provider, bdays, deadline)
+        st = store.state()
+        if complete and month != current:
+            st["complete_months"] = sorted(set(st.get("complete_months", [])) | {month})
+        st.update(provider=provider.name, updated_at=pd.Timestamp.now(tz=TZ).isoformat(),
+                  window_start=start, window_end=end)
+        store.save_state(st)
+        have_days = [d for d in days if store.has_daily(d)]
+        if have_days:
+            store.write_meta("sessions", build_sessions(store, cfg, have_days))
+        if on_block:
+            on_block(bdays)
+        if not complete:
+            pending = 1
+            break
+    st = store.state()
     st["last_update_end"] = end
-    st["provider"] = provider.name
-    st["updated_at"] = pd.Timestamp.now(tz=TZ).isoformat()
+    st["backfill_pending_months"] = pending
     store.save_state(st)
 
     # optional: today's borrow flags, so shortability history accumulates
@@ -215,4 +291,4 @@ def update(cfg: Config | None = None, end: str | None = None, provider: Provider
             store.write_borrow(end, provider.borrow_snapshot())
         except ProviderError as e:
             log.warning("borrow snapshot failed: %s", e)
-    return ses
+    return store.read_meta("sessions")

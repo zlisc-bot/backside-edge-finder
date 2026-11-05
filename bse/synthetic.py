@@ -112,6 +112,6 @@ class SyntheticProvider(Provider):
             frames.append(self.bars(t, d))
             yield pd.concat(frames, ignore_index=True)
 
-    def security_types(self, tickers, dates):
+    def security_types(self, tickers, dates, bulk: bool = True):
         return pd.DataFrame([{"ticker": t, "type": "WARRANT" if t.endswith("7") else "CS",
                               "exchange": "XNAS", "name": f"Synthetic {t}"} for t in tickers])

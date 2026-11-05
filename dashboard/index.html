@@ -269,6 +269,9 @@ function renderHeader(m) {
     el("span", {}, el("b", { text: F.int(c.configs_tested) }), " strategy variants tested"),
     el("span", {}, "updated ", el("b", { text: m.generated_at.replace("T", " ") })));
   $("#source-chip").replaceChildren(el("span", { class: "chip " + (m.synthetic ? "bad" : "info"), text: "Data: " + m.data_source }));
+  const bf = m.backfill || {};
+  if (bf.pending_months > 0 && bf.target_start && bf.target_start < w.start)
+    $("#tape").append(el("span", { class: "chip warn", text: `History still downloading: covers ${w.start} on, filling back to ${bf.target_start}` }));
   $("#synthetic").hidden = !m.synthetic;
 }
 
@@ -675,7 +678,7 @@ function renderMethod(m) {
   const c = m.costs, u = m.universe;
   pane.append(el("div", { class: "row2" },
     el("div", { class: "card prose" }, el("h3", { text: "What is in the database" }),
-      el("p", { text: `Every exchange-listed common stock whose official daily bar traded below $${u.max_low.toFixed(2)} with at least ${F.int(u.min_volume)} shares of volume, ${m.window.start} to ${m.window.end} (rolling ${m.window.months} months). The whole session is kept, including any time above $1, and nothing is filtered by outcome. Prices are unadjusted, so stocks that later reverse-split are still counted at the price they traded. OTC securities, warrants, units, rights, preferreds and funds are excluded.` }),
+      el("p", { text: `Every exchange-listed common stock whose official daily bar traded below $${u.max_low.toFixed(2)} with at least ${F.int(u.min_volume)} shares of volume, ${m.window.start} to ${m.window.end} (rolling ${m.window.months}-month window${(m.backfill || {}).pending_months > 0 ? ", older months still downloading" : ""}). The whole session is kept, including any time above $1, and nothing is filtered by outcome. Prices are unadjusted, so stocks that later reverse-split are still counted at the price they traded. OTC securities, warrants, units, rights, preferreds and funds are excluded.` }),
       el("p", { text: "The universe is chosen with end-of-day information (the day's low and total volume). The “Universe known in real time” split repeats the signal analysis using only signals where the stock had already traded below $1 (or closed below $1 the day before) and printed 1M+ shares by the signal time." })),
     el("div", { class: "card prose" }, el("h3", { text: "How each trade is costed" }),
       el("ul", {}, el("li", { text: `Spread: estimated from 1-minute bars (Abdi–Ranaldo), floored at ${c.spread_floor_ticks} ticks or ${c.spread_floor_bps} bps. Half the spread is paid on every market order.` }),
@@ -771,7 +774,12 @@ async function openCohort(c, title) {
     }
   } catch (err) { body.append(el("div", { class: "empty", text: "Could not load this list: " + err.message })); }
 }
-function sumLine(items) { $("#d-sum").replaceChildren(...items.map(([k, v]) => el("span", {}, k + " ", el("b", { text: v })))); }
+function sumLine(items) {
+  $("#d-sum").replaceChildren(...items.map(([k, v]) => el("span", {}, k + " ", el("b", { text: v }))));
+  if (META.drill_from && META.drill_from > META.window.start)
+    $("#d-sum").append(el("span", { class: "muted", style: "flex-basis:100%;font-family:var(--f-body)",
+      text: `Listed: sessions from ${META.drill_from} on. The statistic itself uses every session since ${META.window.start}.` }));
+}
 function pager(render) {
   const body = $("#d-body"); const more = el("button", { class: "btn", style: "margin:12px 0", text: "Show more" });
   const go = () => { render(drawerShown, drawerShown + 150); drawerShown = Math.min(drawerRows.length, drawerShown + 150); more.hidden = drawerShown >= drawerRows.length; };
@@ -833,6 +841,7 @@ function decode(s) {
 async function openChart(sid, date, mk) {
   const sheet = $("#sheet"); sheet.hidden = false;
   const box = $("#s-chart"); box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Loading chart…" }));
+  if (META.drill_from && date < META.drill_from) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: `Charts are published for sessions from ${META.drill_from} on. This session (${date}) is in the database in your GitHub repository and counts in every statistic.` })); $("#s-title").textContent = date; $("#s-meta").textContent = ""; $("#s-foot").replaceChildren(); return; }
   let day; try { day = await load(`charts/${date}.json`); } catch (e) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Chart file missing for " + date })); return; }
   const s = day.sessions.find(x => x.sid === sid);
   if (!s) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Session not found." })); return; }

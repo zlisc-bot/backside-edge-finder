@@ -23,7 +23,7 @@ from datetime import date as Date
 import pandas as pd
 import requests
 
-from .base import BAR_COLS, DAILY_COLS, HttpClient, Provider, ProviderError, RateLimiter
+from .base import BAR_COLS, DAILY_COLS, HttpClient, PlanLimitError, Provider, ProviderError, RateLimiter
 
 log = logging.getLogger("bse.polygon")
 BASES = ("https://api.massive.com", "https://api.polygon.io")
@@ -42,6 +42,7 @@ class PolygonProvider(Provider):
         rate = rate_per_min if rate_per_min is not None else float(os.environ.get("POLYGON_RATE_PER_MIN", "0"))
         self.http = HttpClient(RateLimiter(rate))
         self.include_otc = include_otc
+        self.unavailable: set[str] = set()     # dates the plan does not serve
 
     # ------------------------------------------------------------------ utils
     def _pick_base(self) -> str:
@@ -75,8 +76,13 @@ class PolygonProvider(Provider):
     def daily_bars(self, dates: list[str]) -> pd.DataFrame:
         frames = []
         for d in dates:
-            js = self._get(f"/v2/aggs/grouped/locale/us/market/stocks/{d}",
-                           {"adjusted": "false", "include_otc": str(self.include_otc).lower()})
+            try:
+                js = self._get(f"/v2/aggs/grouped/locale/us/market/stocks/{d}",
+                               {"adjusted": "false", "include_otc": str(self.include_otc).lower()})
+            except PlanLimitError as e:
+                log.warning("%s: not covered by this data plan (%s)", d, str(e)[:120])
+                self.unavailable.add(d)
+                continue
             res = js.get("results") or []
             if not res:
                 log.info("%s: no grouped bars (holiday/weekend?)", d)
@@ -111,8 +117,12 @@ class PolygonProvider(Provider):
             chunks.append(chunk)
             for ch in chunks:
                 start = prev_day.get(ch[0], ch[0])
-                rows = self._paged(f"/v2/aggs/ticker/{t}/range/1/minute/{start}/{ch[-1]}",
-                                   {"adjusted": "false", "sort": "asc", "limit": 50000})
+                try:
+                    rows = self._paged(f"/v2/aggs/ticker/{t}/range/1/minute/{start}/{ch[-1]}",
+                                       {"adjusted": "false", "sort": "asc", "limit": 50000})
+                except PlanLimitError as e:
+                    log.warning("%s %s..%s: not covered by this data plan (%s)", t, start, ch[-1], str(e)[:120])
+                    continue
                 if not rows:
                     log.warning("%s %s..%s: no minute bars", t, start, ch[-1])
                     continue
@@ -137,10 +147,10 @@ class PolygonProvider(Provider):
         return df[["ticker", "execution_date", "ratio"]]
 
     # ------------------------------------------------------------------ types
-    def security_types(self, tickers, dates):
+    def security_types(self, tickers, dates, bulk: bool = True):
         want = set(tickers)
         found: dict[str, dict] = {}
-        for d in dates:
+        for d in (dates if bulk else []):
             # Bulk lists for the types that matter; anything left over (ETFs,
             # funds, delisted names) is looked up one ticker at a time.
             for typ in ("CS", "ADRC", "OS", "WARRANT", "RIGHT", "UNIT", "PFD"):

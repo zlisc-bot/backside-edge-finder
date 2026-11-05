@@ -3,7 +3,7 @@
 A research engine and dashboard for one question: **when does a high-volume sub-$1 stock
 stop being a long and start being a short, and does shorting it pay after realistic costs?**
 
-It builds a rolling 3-month database of every qualifying session, tests 21 backside signals
+It builds a rolling 2-year database of every qualifying session, tests 21 backside signals
 against a random-timing control, classifies every bar into 8 frontside/backside stages,
 backtests roughly 100,000 entry/stop/exit/hold combinations across 21 time-of-day windows,
 and reports only what survives out-of-sample checks. Every number on the dashboard links to
@@ -17,8 +17,10 @@ the sessions behind it.
 - Nothing is filtered by outcome: runners, faders, halts and failed breakouts all count.
 - Exchange-listed common stock and ADRs only. OTC, warrants, units, rights, preferreds and funds are excluded.
 - **Unadjusted prices.** A stock that later reverse-split still counts at the price it actually traded.
-- Rolling window: the most recent 3 calendar months (Aug 4 to Nov 4 for Nov 4). Raw data is never
-  deleted; change `universe.window_months` to widen the analysis.
+- Rolling window: the most recent 24 months, clipped to the 2 years of history Massive's free plan
+  serves (`universe.max_history_days`; set it to 0 on a paid plan). Raw data is never deleted.
+- The backfill runs newest month first and saves to GitHub after each month, so the dashboard
+  can publish as soon as recent months are in and fill backwards from there.
 
 ## Data source (required)
 
@@ -35,7 +37,8 @@ Put keys in the environment settings, never in this repository.
 
 ```bash
 pip install -r requirements.txt
-python -m bse update      # fetch anything missing in the window (resumable)
+python -m bse update      # fetch anything missing in the window (resumable, newest month first)
+python -m bse update --max-minutes 120 --git-checkpoint   # what the daily job runs
 python -m bse analyze     # run the study and build report/site
 python -m bse all         # both; this is what the daily job runs
 python -m bse status      # what is in the database
@@ -97,7 +100,8 @@ trading all day, both with normal exits and with everything covered at the cutof
   Many brokers will not short sub-$1 stocks at all.
 - The universe uses end-of-day information. A separate split keeps only signals that were
   screenable live (already below $1 and 1M+ shares by the signal time).
-- Three months is a short history. Treat conclusions as provisional and watch them as data accumulates.
+- Example lists and charts on the dashboard cover the most recent 126 trading days (artifact size
+  limits). Every statistic uses the full window, and older sessions stay in the database.
 
 ## Layout
 

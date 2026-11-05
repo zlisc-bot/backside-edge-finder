@@ -108,6 +108,13 @@ def _rle(x):
     return out
 
 
+def _backfill_state() -> dict:
+    from .store import Store
+    st = Store().state()
+    return {"pending_months": int(st.get("backfill_pending_months") or 0),
+            "target_start": st.get("window_start"), "complete_months": len(st.get("complete_months", []))}
+
+
 def build_site(res: dict, data_source: str, out_dir: Path | None = None) -> Path:
     cfg = res["cfg"]
     out = Path(out_dir or REPORT_DIR / "site")
@@ -119,6 +126,9 @@ def build_site(res: dict, data_source: str, out_dir: Path | None = None) -> Path
     stops, targets, holds = grid_rules
     fnd = fd.build(res)
 
+    days_all = res["days"]
+    dd = cfg.report.drill_days
+    drill_from = days_all[-dd] if dd and len(days_all) > dd else days_all[0]
     ev, slice_labels = _event_slices(res["events"].copy())
     sess = res["sessions"].sort_values(["date", "ticker"]).reset_index(drop=True)
     sidx = {sid: i for i, sid in enumerate(sess["sid"])}
@@ -140,7 +150,8 @@ def build_site(res: dict, data_source: str, out_dir: Path | None = None) -> Path
         "universe": {"max_low": cfg.universe.max_low_price, "min_volume": cfg.universe.min_daily_volume,
                      "otc": cfg.universe.include_otc, "types": list(cfg.universe.ticker_types),
                      "adjusted": cfg.universe.adjusted},
-        "test_from": res["test_from"],
+        "test_from": res["test_from"], "drill_from": drill_from,
+        "backfill": _backfill_state(),
         "signals": {k: {"name": v[0], "group": v[1], "ref": v[2], "def": DEFINITIONS[k]} for k, v in SIGNALS.items()},
         "stages": {str(k): {"name": v, "rule": STAGE_RULES.get(k, "")} for k, v in STAGES.items()},
         "stops": {r.code: r.label for r in stops}, "targets": {r.code: r.label for r in targets},
@@ -176,19 +187,22 @@ def build_site(res: dict, data_source: str, out_dir: Path | None = None) -> Path
     })
     tr = res["trades"].copy()
     if len(tr):
+        tr = tr[tr["date"] >= drill_from].copy()
         tr["s"] = tr["sid"].map(sidx)
     _write(data / "trades.json", table(tr, ["cid", "s", "sig_idx", "entry_idx", "entry_mod", "entry_px", "exit_idx",
                                             "exit_mod", "exit_px", "reason", "r", "ssr"]))
     _write(data / "stages.json", {"table": table(res["stages"]), "transitions": table(res["stage_tm"])})
     segs = res["segments"].copy()
     if len(segs):
+        segs = segs[segs["date"] >= drill_from].copy()
         segs["s"] = segs["sid"].map(sidx)
     for k in sorted(set(segs["stage"])) if len(segs) else []:
         _write(data / "segments" / f"{int(k)}.json",
                table(segs[segs["stage"] == k], ["s", "next", "a", "b", "start_mod", "end_mod", "dur_min",
                                                 "range_pct", "fwd_30"]))
-    for code in sorted(set(ev["sig"])):
-        sub = ev[ev["sig"] == code]
+    ev_list = ev[ev["date"] >= drill_from]
+    for code in sorted(set(ev_list["sig"])):
+        sub = ev_list[ev_list["sig"] == code]
         if code == "B00" and len(sub) > 30000:
             sub = sub.sample(30000, random_state=1).sort_values(["s", "idx"])
         _write(data / "events" / f"{code}.json", table(sub, EVENT_COLS))
@@ -197,7 +211,7 @@ def build_site(res: dict, data_source: str, out_dir: Path | None = None) -> Path
 
     charts_src = DERIVED_DIR / "charts"
     for p in sorted(charts_src.glob("*.json")):
-        if p.stem in set(days):
+        if p.stem in set(days) and p.stem >= drill_from:
             _chart_file(p, data / "charts" / p.name)
 
     page = (ROOT / "dashboard" / "index.html").read_text()

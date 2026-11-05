@@ -30,12 +30,18 @@ log = logging.getLogger("bse.pipeline")
 
 
 def analysis_days(store: Store, cfg: Config, end: str | None = None) -> list[str]:
+    """Days in the rolling window whose minute bars have arrived (a backfill in
+    progress is analysed on what it has so far)."""
+    from .collect import window_start
     ses = store.read_meta("sessions")
     if not len(ses):
         return []
-    have = sorted(set(ses["date"]))
+    ses = ses[ses["eligible_type"]]
+    have = sorted(d for d in set(ses["date"]) if store.minute_path(d).exists())
+    if not have:
+        return []
     end = end or have[-1]
-    start = cal.months_back(end, cfg.universe.window_months)
+    start = window_start(cfg, end)
     return [d for d in have if start <= d <= end]
 
 
@@ -90,14 +96,33 @@ def _stage_segments(s, stage, cfg):
     return segs
 
 
+def _frame(rows: list[dict]) -> pd.DataFrame:
+    """Compact table: float32 numbers, categorical strings."""
+    df = pd.DataFrame(rows)
+    for c in df.columns:
+        k = df[c].dtype.kind
+        if k == "f":
+            df[c] = df[c].astype(np.float32)
+        elif k == "O" and c in ("sid", "ticker", "date", "sig"):
+            df[c] = df[c].astype("category")
+    return df
+
+
 def _pass1(args):
     dates, cfg, days_all, chart_dir = args
     store = Store()
     grid = Grid(cfg, days_all)
     evs, segs = [], []
+    ev_frames, seg_frames = [], []
     charts: dict[str, list] = {}
     sess_rows = []
     for s in iter_sessions(store, cfg, dates):
+        if len(evs) > 200_000:
+            ev_frames.append(_frame(evs))
+            evs = []
+        if len(segs) > 100_000:
+            seg_frames.append(_frame(segs))
+            segs = []
         events, perbar = detect(s, cfg)
         label(s, events, cfg)
         stage = classify(s, perbar, cfg)
@@ -114,9 +139,18 @@ def _pass1(args):
                           "volume": float(s.meta.get("v", np.nan)), "ssr_any": bool(s.arr["ssr"].any()),
                           "halts": int(s.arr["after_gap"].sum()),
                           "max_stage": int(stage.max())})
+        if len(charts) > 1:                 # write finished days as we go
+            for d in [d for d in charts if d != s.date]:
+                (chart_dir / f"{d}.json").write_text(json.dumps({"date": d, "sessions": charts.pop(d)}, separators=(",", ":")))
     for d, items in charts.items():
         (chart_dir / f"{d}.json").write_text(json.dumps({"date": d, "sessions": items}, separators=(",", ":")))
-    return evs, segs, grid, sess_rows
+    if evs:
+        ev_frames.append(_frame(evs))
+    if segs:
+        seg_frames.append(_frame(segs))
+    ev_df = pd.concat(ev_frames, ignore_index=True) if ev_frames else pd.DataFrame()
+    seg_df = pd.concat(seg_frames, ignore_index=True) if seg_frames else pd.DataFrame()
+    return ev_df, seg_df, grid, sess_rows
 
 
 def _pass2(args):
@@ -149,20 +183,31 @@ def run_pass1(cfg: Config, days: list[str], workers: int | None = None):
     for p in chart_dir.glob("*.json"):
         p.unlink()
     workers = workers or max(1, min(4, os.cpu_count() or 1))
-    jobs = [(ch, cfg, days, chart_dir) for ch in _chunks(days, workers * 2)]
+    # one job per worker: each job holds a full strategy grid in memory
+    jobs = [(ch, cfg, days, chart_dir) for ch in _chunks(days, workers)]
     evs, segs, rows, grid = [], [], [], None
     ctx = mp.get_context("fork")
     with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as ex:
         for e, s, g, r in ex.map(_pass1, jobs):
-            evs.extend(e)
-            segs.extend(s)
+            evs.append(e)
+            segs.append(s)
             rows.extend(r)
             if grid is None:
                 grid = g
             else:
                 grid.merge(g)
-            log.info("pass 1: %d events so far", len(evs))
-    return pd.DataFrame(evs), pd.DataFrame(segs), pd.DataFrame(rows), grid
+                del g
+            log.info("pass 1: %d events so far", sum(len(x) for x in evs))
+    def cat(frames):
+        frames = [f for f in frames if len(f)]
+        if not frames:
+            return pd.DataFrame()
+        out = pd.concat(frames, ignore_index=True)
+        for c in ("sid", "ticker", "date", "sig"):
+            if c in out:
+                out[c] = out[c].astype(str)
+        return out
+    return cat(evs), cat(segs), pd.DataFrame(rows), grid
 
 
 def run_pass2(cfg: Config, days: list[str], wanted: dict, cutoffs: list[str], workers: int | None = None):

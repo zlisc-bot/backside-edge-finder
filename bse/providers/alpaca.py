@@ -146,7 +146,7 @@ class AlpacaProvider(Provider):
         return pd.DataFrame(rows, columns=["ticker", "execution_date", "ratio"])
 
     # ------------------------------------------------------------------ types
-    def security_types(self, tickers, dates):
+    def security_types(self, tickers, dates, bulk: bool = True):
         a = self.assets().set_index("symbol")
         out = []
         for t in tickers:
