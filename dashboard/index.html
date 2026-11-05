@@ -899,9 +899,13 @@ function chartPane(host, bars, T, o) {
   const draw = () => { raf = 0; for (const [c, box] of [[price, pbox], [vol, vbox]]) {
     box.querySelectorAll(".vline").forEach(n => n.remove());
     const w = box.clientWidth - c.priceScale("right").width();
-    for (const i of idx) { const x = c.timeScale().logicalToCoordinate(i - 0.5); if (x != null && x >= 0 && x <= w) box.append(el("div", { class: "vline", style: `left:${x}px` })); } } };
+    for (const i of idx) {
+      const a = c.timeScale().logicalToCoordinate(i - 1), b = c.timeScale().logicalToCoordinate(i);   // whole indices only
+      if (a == null || b == null) continue; const x = (a + b) / 2;
+      if (x >= 0 && x <= w) box.append(el("div", { class: "vline", style: `left:${x}px` })); } } };
   const redraw = () => { if (!raf) raf = requestAnimationFrame(draw); };
   price.timeScale().subscribeVisibleLogicalRangeChange(redraw);
+  price.timeScale().subscribeSizeChange(redraw); vol.timeScale().subscribeSizeChange(redraw);
   chartObs.observe(pbox); chartObs.observe(vbox);
   const i0 = Math.max(0, bars.findIndex(b => b.m >= VIEW_FROM));
   price.timeScale().setVisibleLogicalRange({ from: i0 - 0.5, to: bars.length + 1 });
@@ -923,7 +927,8 @@ async function openChart(sid, date, mk) {
   const panes = [];
   chartObs = new ResizeObserver(() => panes.forEach(p => p.redraw()));
   const prec = bars[0].c < 1 ? 4 : 2, priceFormat = { type: "price", precision: prec, minMove: prec === 4 ? 0.0001 : 0.01 };
-  const p1 = chartPane(box, bars, T, { label: "1 Minute", ticker: s.ticker, wm: 30, priceFormat });
+  const narrow = matchMedia("(max-width: 760px)").matches;
+  const p1 = chartPane(box, bars, T, { label: "1 Minute", ticker: s.ticker, wm: narrow ? 16 : 30, priceFormat });
   const p5 = chartPane(box, aggregate(bars, 5), T, { label: "5 Minute", ticker: s.ticker, wm: 16, priceFormat });
   panes.push(p1, p5);
   // live stage as a thin strip along the bottom of the 1-minute chart
