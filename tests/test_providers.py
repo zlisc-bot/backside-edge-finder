@@ -110,3 +110,15 @@ def test_alpaca(server, monkeypatch):
     assert pv.splits("2025-10-01", "2025-10-31")["ratio"].iloc[0] == 10.0
     ty = pv.security_types(["ABCD", "ABCDW"], ["2025-10-15"])
     assert dict(zip(ty["ticker"], ty["type"])) == {"ABCD": "CS", "ABCDW": "OTHER"}
+
+
+def test_rate_limiter_backs_off_gently():
+    from bse.providers.base import RateLimiter
+    rl = RateLimiter(0)
+    assert rl.slow_down() >= 60 and rl.per_min == 4.8      # unlimited start -> just under 5/min
+    rl.slow_down()
+    assert abs(rl.per_min - 3.84) < 1e-9                    # a second 429 trims, it does not halve
+    for _ in range(10):
+        rl.slow_down()
+    assert rl.per_min == 3.0                                # floor
+    assert RateLimiter(5).slow_down(retry_after=90) == 90   # honours Retry-After

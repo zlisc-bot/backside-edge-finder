@@ -48,10 +48,19 @@ class RateLimiter:
             time.sleep(sleep)
         self._last = time.monotonic()
 
-    def slow_down(self):
-        # Called on HTTP 429: halve the rate (or start limiting at 5/min).
-        self.per_min = max(1.0, (self.per_min or 10.0) / 2.0)
-        log.warning("rate limited; slowing to %.1f requests/min", self.per_min)
+    def slow_down(self, retry_after: float | None = None) -> float:
+        """Called on HTTP 429. Returns how long to pause before retrying.
+
+        An unlimited start drops to just under the free plan's 5/min. After that
+        each further 429 trims the rate by 20% (never below 3/min). The pause
+        lets the provider's one-minute window empty, so a single burst does not
+        cascade into repeated cuts."""
+        if not self.per_min:
+            self.per_min = 4.8
+        else:
+            self.per_min = max(3.0, self.per_min * 0.8)
+        log.warning("rate limited; pacing at %.1f requests/min", self.per_min)
+        return max(retry_after or 0.0, 61.0)
 
 
 class HttpClient:
@@ -78,9 +87,12 @@ class HttpClient:
             if r.status_code in (401, 403):
                 raise AuthError(f"{r.status_code} from {url.split('?')[0]}: {r.text[:300]}")
             if r.status_code == 429:
-                self.limiter.slow_down()
-                time.sleep(max(delay, 12))
-                delay = min(delay * 2, 120)
+                ra = r.headers.get("Retry-After", "")
+                try:
+                    ra_s = float(ra)
+                except ValueError:
+                    ra_s = None
+                time.sleep(self.limiter.slow_down(ra_s))
                 continue
             if r.status_code >= 500:
                 time.sleep(delay)
