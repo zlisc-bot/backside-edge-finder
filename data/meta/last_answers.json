@@ -1,76 +1,76 @@
 {
  "window": {
-  "start": "2026-08-03",
+  "start": "2026-02-02",
   "end": "2026-11-03",
-  "trading_days": 66,
+  "trading_days": 191,
   "months": 24
  },
- "generated_at": "2026-11-05T00:15-05:00",
+ "generated_at": "2026-11-05T05:43-05:00",
  "answers": [
   {
    "id": "q1",
    "status": "supported",
-   "answer": "Bounce on fading volume is the earliest signal that beat random timing. It fires a median of 7 min after the high of day, 3.3% below it. Price fell 1 ATR before rising 1 ATR in 52.2% of 6,295 cases and did the opposite in 41.5%. That is +10.3 pts better than shorting at random moments at the same times of day (95% interval +7.7 pts to +12.7 pts)."
+   "answer": "Bounce on fading volume is the earliest signal that beat random timing. It fires a median of 7 min after the high of day, 3.1% below it. Price fell 1 ATR before rising 1 ATR in 52.8% of 19,832 cases and did the opposite in 41.4%. That is +10.5 pts better than shorting at random moments at the same times of day (95% interval +9.2 pts to +12.0 pts). 1 of 21 signals beat random timing after correcting for testing 21 signals at once (5% false discovery rate)."
   },
   {
    "id": "q2",
-   "status": "weak",
-   "answer": "Across all backside signals, the edge over random timing was largest from 10:00 to 11:00 (\u22126.8 pts, interval \u221210.1 pts to \u22123.7 pts, 6,576 signals) and smallest in the pre-market (\u221217.5 pts). No time bucket's signal edge was clearly above random timing. For the leading strategy (Loses VWAP, then its first reclaim attempt fails \u2192 short a lower high below the 20 EMA; exit on a 1-min close above vwap; cover at 5% profit; max hold 15 min; entries 09:30-16:00), stopping new entries at 10:30 gave the most total profit: \u22121.18% per trade, 29.0% winners, 28.1% of days positive, 145 trades. The steadiest day-to-day results came from stopping at 11:00 (daily mean/stdev -0.48). In the first 60% of weeks the best cutoff was 10:30; in the last 40% it was 10:30 (the same answer). The best start/stop pair was 10:30 to 11:00 (\u22120.68% per trade over 29 trades). Trades entered in the 09:30 bucket averaged \u22120.82% (49 trades), the first 15-minute bucket with a non-positive average. A historical cutoff describes the average past trade; your own fills, size and discipline decide whether it applies to you."
+   "status": "supported",
+   "answer": "For the signals that beat random timing (Bounce on fading volume), the edge was largest in the pre-market (+15.0 pts, interval +12.9 pts to +16.9 pts, 9,867 signals) and smallest from 11:00 to 12:00 (+4.4 pts, interval \u22120.3 pts to +8.9 pts). Many brokers restrict pre-market shorting; in regular hours it was best from 10:00 to 11:00 (+7.3 pts, interval +3.7 pts to +11.4 pts). Pooled across all signals, every time window did worse than random timing, because most breakdown signals fire right before a bounce. For Bounce on fading volume \u2192 short the signal candle's close; fixed stop 3% above entry; cover at 3% profit; max hold 30 min; entries 09:30-16:00, stopping new entries at 10:30 lost the least: \u22121.92% per trade after costs, 33.2% winners, 2.6% of days positive, 2,677 trades. It lost money at every cutoff after costs, so here the cutoff only decides how much is lost; it is not a reason to trade. Before costs, the best cutoff for it was 16:00 (\u22120.15% per trade). In the first 60% of weeks the best cutoff was 10:30; in the last 40% it was 10:30 (the same answer). The best start/stop pair was 10:15 to 10:30 (\u22121.99% per trade over 536 trades). Trades entered in the 09:30 bucket averaged \u22121.93% (814 trades), the first 15-minute bucket with a non-positive average. A historical cutoff describes the average past trade; your own fills, size and discipline decide whether it applies to you."
   },
   {
    "id": "q3",
    "status": "not supported",
-   "answer": "Walk-forward test: each week was traded with the configuration that ranked best on the earlier weeks only. Out of sample that procedure averaged \u22123.28% per trade after costs over 34 trades; 33% of the 6 test weeks were positive. It switched between 5 different configurations. Ranked on the first 60% of weeks, the top configuration was Loses 9 EMA, then fails to reclaim it within 10 min \u2192 short a lower high below the 20 EMA; stop 3 atr above entry; no target (stop or time exit only); max hold end of day; entries 09:30-10:00. It earned +2.62% per trade there and \u22123.32% on the later weeks it had never seen (32 trades). 1 of the top 25 training-period configurations stayed positive out of sample. Probability that the in-sample winner is below median out of sample (CSCV): 31% across 252 splits. 2,149,875 configuration-and-time-window combinations were tested, so the best in-sample number is optimistic by construction; rely on the out-of-sample figures."
+   "answer": "Walk-forward test: each week was traded with the configuration that ranked best on the earlier weeks only. Out of sample that procedure averaged \u22120.89% per trade after costs over 123 trades; 47% of the 32 test weeks were positive. It switched between 5 different configurations. Before costs, the same procedure averaged +1.12% per trade (102 trades, 68% of test weeks positive). A typical short-listed trade paid 1.57% in costs: 0.55% spread and slippage, 0.73% commission and 0.30% locate. So there is a repeatable edge before costs, and the costs erase it. Cheaper execution (per-share commission, locate, resting orders instead of market orders) decides whether it pays. Ranked on the first 60% of weeks, the top configuration was 9 EMA crosses below 20 EMA with both below VWAP \u2192 short a lower high below the 20 EMA; stop order above vwap; no target (stop or time exit only); max hold end of day; entries 10:30-11:00. It earned +1.68% per trade there and +0.16% on the later weeks it had never seen (66 trades). 2 of the top 25 training-period configurations stayed positive out of sample. Its 2 neighbouring settings (one step tighter or looser stop, exit or hold) averaged +0.03% per trade against its own +1.01%, so it is an isolated peak, the usual sign of overfitting. Limited to trades a live screen could have caught (already under $1 with 1M+ shares by the entry minute, 91% of its trades), it averaged +0.98% over the whole period. Probability that the in-sample winner is below median out of sample (CSCV): 19% across 252 splits. 2,149,875 configuration-and-time-window combinations were tested, so the best in-sample number is optimistic by construction; rely on the out-of-sample figures."
   }
  ],
  "kpis": [
   {
    "id": "continuation",
    "title": "Highest probability of downside continuation",
-   "value": 0.52228,
+   "value": 0.52792,
    "text": "Bounce on fading volume"
   },
   {
    "id": "best_signal",
    "title": "Best indicator or combination",
-   "value": 0.10297,
+   "value": 0.10481,
    "text": "Bounce on fading volume"
   },
   {
    "id": "lowest_fail",
    "title": "Lowest failure rate",
-   "value": 0.41533,
+   "value": 0.41393,
    "text": "Bounce on fading volume"
   },
   {
    "id": "best_mfe",
    "title": "Best average downside excursion",
-   "value": 0.05813,
+   "value": 0.0517,
    "text": "Loses VWAP, then its first reclaim attempt fails"
   },
   {
    "id": "begin",
    "title": "Best time to begin scalping",
    "value": null,
-   "text": "10:30"
+   "text": "None after costs"
   },
   {
    "id": "stop",
    "title": "Best time to stop new scalps",
    "value": null,
-   "text": "10:30"
+   "text": "None after costs"
   },
   {
    "id": "best_ev",
    "title": "Highest expected value setup (out of sample)",
-   "value": -0.03323,
-   "text": "Loses 9 EMA, then fails to reclaim it within 10 min \u2192 short a lower high below the 20 EMA; stop 3 atr above entry; no target (stop or time exit only); max hold end of day; entries 09:30-10:00"
+   "value": 0.00162,
+   "text": "9 EMA crosses below 20 EMA with both below VWAP \u2192 short a lower high below the 20 EMA; stop order above vwap; no target (stop or time exit only); max hold end of day; entries 10:30-11:00"
   },
   {
    "id": "best_rr",
    "title": "Best risk-to-reward combination",
-   "value": 2.8523,
-   "text": "Loses VWAP while 20 EMA falls and selling volume expands \u2192 short a lower high below the 20 EMA; exit on a 1-min close above vwap; no target (stop or time exit only); max hold end of day; entries 09:30-10:00"
+   "value": 2.1027,
+   "text": "9 EMA crosses below 20 EMA with both below VWAP \u2192 short a lower high below the 20 EMA; exit on a 1-min close above vwap; no target (stop or time exit only); max hold end of day; entries 10:30-11:00"
   }
  ]
 }
