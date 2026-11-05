@@ -42,6 +42,11 @@ def analysis_days(store: Store, cfg: Config, end: str | None = None) -> list[str
         return []
     end = end or have[-1]
     start = window_start(cfg, end)
+    st = store.state()
+    if "complete_months" in st:
+        # skip a month that a backfill is still downloading (the newest month is always in)
+        ok = set(st["complete_months"]) | {end[:7]}
+        have = [d for d in have if d[:7] in ok]
     return [d for d in have if start <= d <= end]
 
 

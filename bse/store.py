@@ -17,11 +17,19 @@ Raw data is never deleted; the analysis window is applied when loading.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
 
 from .config import DATA_DIR
+
+
+def _atomic_parquet(df: pd.DataFrame, path: Path):
+    """Write then rename, so a reader never sees a half-written file."""
+    tmp = path.with_name(path.name + ".tmp")
+    df.to_parquet(tmp, index=False, compression="zstd")
+    os.replace(tmp, path)
 
 
 class Store:
@@ -38,7 +46,7 @@ class Store:
         return self.daily_path(d).exists()
 
     def write_daily(self, d: str, df: pd.DataFrame):
-        df.to_parquet(self.daily_path(d), index=False, compression="zstd")
+        _atomic_parquet(df, self.daily_path(d))
 
     def read_daily(self, dates: list[str]) -> pd.DataFrame:
         frames = [pd.read_parquet(self.daily_path(d)) for d in dates if self.has_daily(d)]
@@ -73,7 +81,7 @@ class Store:
         old = self.read_minute(d, kind)
         both = pd.concat([old, df], ignore_index=True) if len(old) else df
         both = both.drop_duplicates(["ticker", "ts"], keep="last").sort_values(["ticker", "ts"])
-        both.to_parquet(self.minute_path(d, kind), index=False, compression="zstd")
+        _atomic_parquet(both, self.minute_path(d, kind))
 
     # ------------------------------------------------------------------- meta
     def _meta(self, name: str) -> Path:
@@ -84,14 +92,17 @@ class Store:
         return pd.read_parquet(p) if p.exists() else pd.DataFrame()
 
     def write_meta(self, name: str, df: pd.DataFrame):
-        df.to_parquet(self._meta(f"{name}.parquet"), index=False, compression="zstd")
+        _atomic_parquet(df, self._meta(f"{name}.parquet"))
 
     def state(self) -> dict:
         p = self._meta("state.json")
         return json.loads(p.read_text()) if p.exists() else {}
 
     def save_state(self, st: dict):
-        self._meta("state.json").write_text(json.dumps(st, indent=1, sort_keys=True))
+        p = self._meta("state.json")
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(st, indent=1, sort_keys=True))
+        os.replace(tmp, p)
 
     def write_borrow(self, d: str, df: pd.DataFrame):
-        df.to_parquet(self.root / "meta" / "borrow" / f"{d}.parquet", index=False, compression="zstd")
+        _atomic_parquet(df, self.root / "meta" / "borrow" / f"{d}.parquet")
