@@ -33,3 +33,10 @@ def test_new_low_of_move_and_reclaim():
     assert e["rec_vwap_eod"] in (0.0, 1.0, None) or np.isnan(e["rec_vwap_eod"])
     assert e["nhod_eod"] == 1.0               # 0.58 closes take out the high
     assert e["t_nml"] == pytest.approx(1.0)
+
+
+def test_chart_week_is_monday():
+    from bse.report import _week
+    assert _week("2026-10-16") == "2026-10-12"   # Friday -> Monday
+    assert _week("2026-10-12") == "2026-10-12"   # Monday stays
+    assert _week("2026-11-01") == "2026-10-26"   # Sunday -> previous Monday

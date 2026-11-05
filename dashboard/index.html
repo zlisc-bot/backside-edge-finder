@@ -840,8 +840,8 @@ function showSegments(rows) {
 }
 
 /* --------------------------------------------------------------- chart */
-let charts = [], chartObs = null;
-function closeSheet() { $("#sheet").hidden = true; charts.forEach(c => c.remove()); charts = []; if (chartObs) { chartObs.disconnect(); chartObs = null; } }
+let charts = [], chartObs = null, chartGen = 0;
+function closeSheet() { $("#sheet").hidden = true; chartGen++; charts.forEach(c => c.remove()); charts = []; if (chartObs) { chartObs.disconnect(); chartObs = null; } }
 $("#s-close").addEventListener("click", closeSheet);
 function decode(s) {
   const n = s.dc.length + 1, t = new Array(n), c = new Array(n);
@@ -895,8 +895,8 @@ function chartPane(host, bars, T, o) {
   sync(price, vol); sync(vol, price);
   // dashed lines at 09:30 and 16:00, drawn between the bars either side
   const idx = SESSION_LINES.map(t => bars.findIndex(b => b.m >= t)).filter(i => i > 0);
-  let raf = 0;
-  const draw = () => { raf = 0; for (const [c, box] of [[price, pbox], [vol, vbox]]) {
+  let raf = 0; const gen = chartGen;
+  const draw = () => { raf = 0; if (gen !== chartGen) return; for (const [c, box] of [[price, pbox], [vol, vbox]]) {
     box.querySelectorAll(".vline").forEach(n => n.remove());
     const w = box.clientWidth - c.priceScale("right").width();
     for (const i of idx) {
@@ -911,11 +911,16 @@ function chartPane(host, bars, T, o) {
   price.timeScale().setVisibleLogicalRange({ from: i0 - 0.5, to: bars.length + 1 });
   return { price, cs, redraw };
 }
+// Monday of the week holding a YYYY-MM-DD date: weekly chart files are named by it
+function weekOf(date) { const [y, m, d] = date.split("-").map(Number), t = new Date(Date.UTC(y, m - 1, d));
+  t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7)); return t.toISOString().slice(0, 10); }
 async function openChart(sid, date, mk) {
   const sheet = $("#sheet"); sheet.hidden = false;
   const box = $("#s-chart"); box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Loading chart…" }));
-  if (META.drill_from && date < META.drill_from) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: `Charts are published for sessions from ${META.drill_from} on. This session (${date}) is in the database in your GitHub repository and counts in every statistic.` })); $("#s-title").textContent = date; $("#s-meta").textContent = ""; $("#s-foot").replaceChildren(); return; }
-  let day; try { day = await load(`charts/${date}.json`); } catch (e) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Chart file missing for " + date })); return; }
+  const chartFrom = META.chart_from ?? META.drill_from;
+  if (chartFrom && date < chartFrom) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: `Charts are published for sessions from ${chartFrom} on (artifact size limit). This session (${date}) is in the database in your GitHub repository and counts in every statistic.` })); $("#s-title").textContent = date; $("#s-meta").textContent = ""; $("#s-foot").replaceChildren(); return; }
+  const file = META.chart_files === "week" ? `charts/w-${weekOf(date)}.json` : `charts/${date}.json`;
+  let day; try { day = await load(file); } catch (e) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Chart file missing for " + date })); return; }
   const s = day.sessions.find(x => x.sid === sid);
   if (!s) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Session not found." })); return; }
   const { bars, stage } = decode(s);

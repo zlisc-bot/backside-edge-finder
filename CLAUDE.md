@@ -40,8 +40,8 @@ environment.network).
    Publish as soon as the most recent ~3 months are in, then again as history fills in.
 2. `python -m bse analyze`: about 10 minutes for 3 months, up to about an hour for the full 2
    years. It analyses only days whose minute bars have arrived, and writes report/site and
-   derived/study.pkl. Statistics use the whole window. Example lists and charts cover the most
-   recent 126 trading days (artifact size limits).
+   derived/study.pkl. Statistics use the whole window. Every session has a chart (weekly
+   chart files, up to 200 MB); example lists cover the most recent 126 trading days.
 3. `python -m pytest -q tests`
 4. `python scripts/publish_plan.py > plan.json`. Exit code 3 means synthetic: stop.
 5. Publish with the Artifact tool, following plan.json:

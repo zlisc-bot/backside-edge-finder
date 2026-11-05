@@ -8,6 +8,7 @@ delta-coded; the page rebuilds the bars and the EMAs (from seeds) itself.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import shutil
 from pathlib import Path
@@ -23,6 +24,8 @@ from .signals import DEFINITIONS, SIGNALS
 from .stages import STAGE_RULES, STAGES
 from .validation import window_label
 
+
+log = logging.getLogger("bse.report")
 
 def _clean(v):
     if isinstance(v, (np.floating, float)):
@@ -74,7 +77,14 @@ def _event_slices(ev: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     return e, labels
 
 
-def _chart_file(src: Path, dst: Path):
+def _week(d: str) -> str:
+    """Monday of the week containing trading day d (YYYY-MM-DD)."""
+    import datetime as _dt
+    x = _dt.date.fromisoformat(d)
+    return (x - _dt.timedelta(days=x.weekday())).isoformat()
+
+
+def _chart_sessions(src: Path) -> list:
     js = json.loads(src.read_text())
     out = []
     for s in js["sessions"]:
@@ -95,7 +105,7 @@ def _chart_file(src: Path, dst: Path):
             "e9_0": e9, "e20_0": e20,
             "st": _rle(s["st"]), "ev": s.get("ev", []),
         })
-    _write(dst, {"date": js["date"], "sessions": out})
+    return out
 
 
 def _rle(x):
@@ -209,10 +219,31 @@ def build_site(res: dict, data_source: str, out_dir: Path | None = None) -> Path
     _write(data / "sessions.json", table(sess, ["sid", "ticker", "date", "pc", "hod", "hod_mod", "lod", "close",
                                                 "volume", "ssr_any", "halts", "max_stage"]))
 
+    # Session charts: one file per week (named by its Monday), newest week first,
+    # until the size budget is used. A 2-year window is ~105 files.
     charts_src = DERIVED_DIR / "charts"
+    cd = cfg.report.chart_days
+    chart_from = days_all[-cd] if cd and len(days_all) > cd else days_all[0]
+    in_window = set(days)
+    weeks: dict[str, list[Path]] = {}
     for p in sorted(charts_src.glob("*.json")):
-        if p.stem in set(days) and p.stem >= drill_from:
-            _chart_file(p, data / "charts" / p.name)
+        if p.stem in in_window and p.stem >= chart_from:
+            weeks.setdefault(_week(p.stem), []).append(p)
+    budget, used, first_day = cfg.report.chart_budget_mb * 1024 * 1024, 0, None
+    for w in sorted(weeks, reverse=True):
+        sessions = [x for p in weeks[w] for x in _chart_sessions(p)]
+        blob = json.dumps(_clean({"week": w, "sessions": sessions}), separators=(",", ":"), allow_nan=False)
+        if used + len(blob) > budget:
+            log.warning("chart budget (%d MB) reached: charts start at %s", cfg.report.chart_budget_mb, first_day)
+            break
+        (data / "charts").mkdir(parents=True, exist_ok=True)
+        (data / "charts" / f"w-{w}.json").write_text(blob)
+        used += len(blob)
+        first_day = weeks[w][0].stem
+    meta["chart_from"] = first_day or "9999-12-31"
+    meta["chart_files"] = "week"
+    meta["chart_mb"] = round(used / 1024 / 1024, 1)
+    _write(data / "summary.json", meta)
 
     page = (ROOT / "dashboard" / "index.html").read_text()
     (out / "index.html").write_text(page)

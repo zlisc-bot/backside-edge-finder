@@ -100,8 +100,10 @@ trading all day, both with normal exits and with everything covered at the cutof
   Many brokers will not short sub-$1 stocks at all.
 - The universe uses end-of-day information. A separate split keeps only signals that were
   screenable live (already below $1 and 1M+ shares by the signal time).
-- Example lists and charts on the dashboard cover the most recent 126 trading days (artifact size
-  limits). Every statistic uses the full window, and older sessions stay in the database.
+- Every session in the window has a chart on the dashboard (one chart file per week, capped at
+  200 MB, newest weeks first; `chart_days` and `chart_budget_mb` in `bse/config.py`). Example
+  lists of individual signals and trades cover the most recent 126 trading days (artifact size
+  limits). Every statistic uses the full window.
 
 ## Layout
 

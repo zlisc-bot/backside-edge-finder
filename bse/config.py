@@ -174,6 +174,11 @@ class Report:
     # recent `drill_days` trading days (artifact size limits). Statistics always
     # use the whole window.
     drill_days: int = 126
+    # Session charts are written one file per week, so the whole window fits the
+    # artifact's file-count limit. chart_days = 0 charts every session in the window;
+    # chart_budget_mb caps their total size (newest weeks are kept first).
+    chart_days: int = 0
+    chart_budget_mb: int = 200
 
 
 @dataclass
