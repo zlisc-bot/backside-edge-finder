@@ -1,4 +1,5 @@
 {
+ "backfill_pending_months": 0,
  "complete_months": [
   "2024-11",
   "2024-12",
@@ -26,6 +27,7 @@
   "2026-10"
  ],
  "empty_sessions": [],
+ "last_update_end": "2026-11-03",
  "provider": "polygon",
  "unavailable_dates": [],
  "updated_at": "2026-11-05T17:43:23.658265-05:00",
