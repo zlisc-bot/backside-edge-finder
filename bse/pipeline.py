@@ -122,10 +122,11 @@ def _pass1(args):
     charts: dict[str, list] = {}
     sess_rows = []
     for s in iter_sessions(store, cfg, dates):
-        if len(evs) > 200_000:
+        # Python dicts cost ~20x a table row: convert often
+        if len(evs) > 20_000:
             ev_frames.append(_frame(evs))
             evs = []
-        if len(segs) > 100_000:
+        if len(segs) > 20_000:
             seg_frames.append(_frame(segs))
             segs = []
         events, perbar = detect(s, cfg)
@@ -177,6 +178,31 @@ def _pass2(args):
     return out
 
 
+def _mem_bytes() -> int:
+    """Memory this process may use: the tightest cgroup limit, else physical RAM."""
+    best = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    for p in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            v = Path(p).read_text().strip()
+            if v.isdigit() and 0 < int(v) < best:
+                best = int(v)
+        except OSError:
+            pass
+    return best
+
+
+def _auto_workers(cfg: Config, days: list[str]) -> int:
+    """As many pass-1 workers as fit: each holds a strategy grid plus its
+    share of sessions. Keeps 40% headroom (the container can OOM-kill below
+    physical RAM)."""
+    n_weeks = len({__import__("datetime").date.fromisoformat(d).isocalendar()[:2] for d in days}) + 1
+    per = Grid.estimate_bytes(cfg, n_weeks) * 1.4 + 1.2e9
+    fit = int(_mem_bytes() * 0.6 // per)
+    w = max(1, min(4, os.cpu_count() or 1, fit))
+    log.info("pass 1: %d worker(s) (grid ~%.1f GB each)", w, Grid.estimate_bytes(cfg, n_weeks) / 1e9)
+    return w
+
+
 def _chunks(dates, k):
     k = max(1, min(k, len(dates)))
     return [list(x) for x in np.array_split(np.array(dates), k) if len(x)]
@@ -187,7 +213,7 @@ def run_pass1(cfg: Config, days: list[str], workers: int | None = None):
     chart_dir.mkdir(parents=True, exist_ok=True)
     for p in chart_dir.glob("*.json"):
         p.unlink()
-    workers = workers or max(1, min(4, os.cpu_count() or 1))
+    workers = workers or _auto_workers(cfg, days)
     # one job per worker: each job holds a full strategy grid in memory
     jobs = [(ch, cfg, days, chart_dir) for ch in _chunks(days, workers)]
     evs, segs, rows, grid = [], [], [], None

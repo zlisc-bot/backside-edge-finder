@@ -402,8 +402,9 @@ class Grid:
         # per-WEEK sums of squares (per-day arrays would not fit for a 2-year window)
         self.w_sq = np.zeros((nc, self.nW), f4)
         self.wb_sum = np.zeros((nc, self.nW, self.nB), f4)
-        self.wb_n = np.zeros((nc, self.nW, self.nB), np.int32)
-        self.wb_win = np.zeros((nc, self.nW, self.nB), np.int32)
+        # trade counts per (config, week, bucket) stay far below 65,535
+        self.wb_n = np.zeros((nc, self.nW, self.nB), np.uint16)
+        self.wb_win = np.zeros((nc, self.nW, self.nB), np.uint16)
         self.pos = np.zeros(nc)
         self.neg = np.zeros(nc)
         self.rmult = np.zeros(nc)
@@ -413,6 +414,13 @@ class Grid:
                          "win": np.zeros((nc, self.nB), np.int64)} for k in ("low", "high")}
         self.cost_base = cfg.costs
         self.cost_scen = {k: cfg.costs_for(k) for k in ("low", "high")}
+
+    @staticmethod
+    def estimate_bytes(cfg: Config, n_weeks: int) -> int:
+        stops, targets, holds = build_rules(cfg)
+        ncfg = len(TRADE_SIGNALS) * len(cfg.strat.entry_timings) * len(stops) * len(targets) * len(holds)
+        nb = len(cfg.strat.tod_edges) - 1
+        return ncfg * n_weeks * (nb * (4 + 2 + 2) + 4)
 
     def cfg_id(self, si, ti, sk, gk, hk):
         return (((si * self.nT + ti) * self.nS + sk) * self.nG + gk) * self.nH + hk
@@ -465,8 +473,8 @@ class Grid:
             for b in np.unique(bk):
                 mb = (bk == b)[:, None, None, None] & keep
                 self.wb_sum[sl, wi, b] += np.where(mb, r, 0).sum(0).ravel()
-                self.wb_n[sl, wi, b] += mb.sum(0).ravel()
-                self.wb_win[sl, wi, b] += (mb & (r > 0)).sum(0).ravel()
+                self.wb_n[sl, wi, b] += mb.sum(0).ravel().astype(np.uint16)
+                self.wb_win[sl, wi, b] += (mb & (r > 0)).sum(0).ravel().astype(np.uint16)
                 for k, rr in rl.items():
                     self.scen[k]["sum"][sl, b] += np.where(mb, rr, 0).sum(0).ravel()
                     self.scen[k]["n"][sl, b] += mb.sum(0).ravel()
