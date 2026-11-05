@@ -8,3 +8,4 @@ plan.json
 update.log
 config.local.json.bak
 *.tmp
+analyze.log
