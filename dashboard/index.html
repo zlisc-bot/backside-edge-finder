@@ -225,7 +225,14 @@ td.cell:hover { outline: 1px solid var(--accent); outline-offset: -1px; }
 </div>
 <div class="tip" id="tip" hidden></div>
 
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+// If the main script below fails to start, say so instead of leaving the page frozen on "Loading".
+window.addEventListener("error", e => {
+  const t = document.getElementById("tape");
+  if (t && /Loading the database/.test(t.textContent))
+    t.textContent = "The dashboard could not start (" + (e.message || "script error") + "). Reload the page; if this keeps happening, tell Claude this message.";
+});
+</script>
 <script>
 "use strict";
 const $ = (s, el = document) => el.querySelector(s);
@@ -256,7 +263,9 @@ const F = {
 const signCls = v => isNum(v) ? (v > 0 ? "pos" : v < 0 ? "neg" : "") : "";
 const cache = new Map();
 async function load(path) {
-  if (!cache.has(path)) cache.set(path, fetch("data/" + path).then(r => { if (!r.ok) throw new Error(path + " " + r.status); return r.json(); }));
+  // a failed download is forgotten, so clicking again retries instead of repeating the old error
+  if (!cache.has(path)) cache.set(path, fetch("data/" + path).then(r => { if (!r.ok) throw new Error(path + " " + r.status); return r.json(); })
+    .catch(e => { cache.delete(path); throw e; }));
   return cache.get(path);
 }
 const objs = t => t.rows.map(r => Object.fromEntries(t.cols.map((c, i) => [c, r[i]])));
@@ -767,7 +776,7 @@ async function eventsFor(sig) {
       for (const k in L) if (typeof r[k] === "number") r[k] = L[k][r[k]];
     }
     return rows;
-  })());
+  })().catch(e => { evCache.delete(sig); throw e; }));
   return evCache.get(sig);
 }
 const ALL_SIGS = () => Object.keys(META.signals).filter(k => k !== "B00");
@@ -864,6 +873,31 @@ function showSegments(rows) {
 }
 
 /* --------------------------------------------------------------- chart */
+// The chart library is fetched only when needed and never blocks the rest of the page:
+// if one CDN is slow or blocked, the next is tried, and the numbers and lists keep working.
+const LWC_SOURCES = [
+  "https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js",
+  "https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js",
+];
+let lwcLoading = null;
+function loadChartLib() {
+  if (window.LightweightCharts) return Promise.resolve();
+  if (!lwcLoading) lwcLoading = (async () => {
+    for (const src of LWC_SOURCES) {
+      const ok = await new Promise(done => {
+        const s = document.createElement("script"); s.src = src; s.async = true;
+        const timer = setTimeout(() => done(false), 15000);
+        s.onload = () => { clearTimeout(timer); done(!!window.LightweightCharts); };
+        s.onerror = () => { clearTimeout(timer); done(false); };
+        document.head.append(s);
+      });
+      if (ok || window.LightweightCharts) return;
+    }
+    lwcLoading = null;   // the next click tries again
+    throw new Error("chart library did not load");
+  })();
+  return lwcLoading;
+}
 let charts = [], chartObs = null, chartGen = 0;
 function closeSheet() { $("#sheet").hidden = true; chartGen++; charts.forEach(c => c.remove()); charts = []; if (chartObs) { chartObs.disconnect(); chartObs = null; } }
 $("#s-close").addEventListener("click", closeSheet);
@@ -944,9 +978,11 @@ async function openChart(sid, date, mk) {
   const chartFrom = META.chart_from ?? META.drill_from;
   if (chartFrom && date < chartFrom) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: `Charts are published for sessions from ${chartFrom} on (artifact size limit). This session (${date}) is in the database in your GitHub repository and counts in every statistic.` })); $("#s-title").textContent = date; $("#s-meta").textContent = ""; $("#s-foot").replaceChildren(); return; }
   const file = META.chart_files === "week" ? `charts/w-${weekOf(date)}.json` : `charts/${date}.json`;
-  let day; try { day = await load(file); } catch (e) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Chart file missing for " + date })); return; }
+  const lib = loadChartLib().then(() => true, () => false);
+  let day; try { day = await load(file); } catch (e) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: `Could not load the chart for ${date} (${e.message}). Click the session again to retry.` })); return; }
   const s = day.sessions.find(x => x.sid === sid);
   if (!s) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "Session not found." })); return; }
+  if (!(await lib)) { box.replaceChildren(el("div", { class: "empty", style: "margin:24px", text: "The charting library did not load (it comes from cdn.jsdelivr.net or unpkg.com). Check your connection or any content blocker, then click the session again." })); return; }
   const { bars, stage } = decode(s);
   const [y, mo, d] = date.split("-").map(Number), base = Date.UTC(y, mo - 1, d) / 1000, T = m => base + m * 60;
   const long = new Date(base * 1000).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -988,14 +1024,20 @@ function showTab(name) {
 }
 document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
 (async () => {
+  try { META = await load("summary.json"); }
+  catch (e) {
+    $("#tape").replaceChildren(el("span", { text: `Could not load the dashboard's data (${e.message}). Reload the page to try again.` }));
+    return;
+  }
   try {
-    META = await load("summary.json");
     renderHeader(META); renderAnswers(META.findings); renderKpis(META.kpis); renderQuestions(META.findings); renderMethod(META);
     let t = "signals"; try { t = localStorage.getItem("bse-tab") || t; } catch {}
     showTab(RENDER[t] || t === "questions" || t === "method" ? t : "signals");
   } catch (e) {
-    $("#tape").replaceChildren(el("span", { text: "No data has been loaded into this dashboard yet." }));
-    $("#answers").replaceChildren(el("div", { class: "empty", style: "margin-top:20px", text: "The database is empty. Once the first collection runs, the three answers appear here." }));
+    $("#answers").replaceChildren(el("div", { class: "empty", style: "margin-top:20px", text: "The dashboard hit an error while drawing: " + e.message }));
   }
+  // fetch the chart library in the background once the page is up, so the first chart opens quickly
+  const prefetch = () => loadChartLib().catch(() => {});
+  if (window.requestIdleCallback) window.requestIdleCallback(prefetch, { timeout: 4000 }); else setTimeout(prefetch, 1500);
 })();
 </script>

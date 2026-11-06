@@ -6,7 +6,7 @@ Conventions
     bar touching both counts as failed). "Edge" = P(worked) - P(failed); a
     coin-flip market gives ~0.
   * Lift = a signal's value minus the CONTROL sample's value at the same times
-    of day (control = every 5th bar after a high, no signal required). A signal
+    of day (control = every 10th bar after a high, no signal required). A signal
     with no lift is no better than shorting at a random moment.
   * Intervals are 95% bootstrap intervals resampling whole sessions (signals)
     or whole days (trades), because observations inside one are correlated.

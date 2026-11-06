@@ -45,7 +45,7 @@ SIGNALS = {
     "C07": ("Loses 20 EMA while 9 and 20 EMA are both falling", "combo", "ema20"),
     "C08": ("Loses VWAP while 20 EMA falls and selling volume expands", "combo", "vwap"),
     "C09": ("Lower high after losing 20 EMA, while below VWAP", "combo", "ema20"),
-    "B00": ("Control: every 5th bar after a high (no signal)", "baseline", "ema9"),
+    "B00": ("Control: every 10th bar after a high (no signal)", "baseline", "ema9"),
 }
 
 DEFINITIONS = {
