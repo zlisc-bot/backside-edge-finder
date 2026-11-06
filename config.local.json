@@ -2,6 +2,7 @@
   "costs": {
     "commission_per_share": 0.0,
     "commission_min": 0.0,
-    "commission_cap_pct": 0.0
+    "commission_cap_pct": 0.0,
+    "locate_pct": 0.0
   }
 }
